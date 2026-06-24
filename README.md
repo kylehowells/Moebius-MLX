@@ -73,7 +73,7 @@ Run the local verification bundle:
 Scripts/verify_local.sh
 ```
 
-By default this checks the converted artifact directory shape, the two stable `ft_places2` q4 candidate views, quantized UNet files and manifest references, script syntax, Swift tests, representative model loads, the f32 fixture, f16/q4 image smoke tests, `compare-image ft_places2 --steps 2`, `benchmark-image ft_places2-q4` against f16, and trimmed iPad staging for both the default q4 package and the 191M size-target candidate.
+By default this checks the converted artifact directory shape, the two stable `ft_places2` q4 candidate views, quantized UNet files and manifest references, checked-in benchmark graphs, demo cleanup and storyboard-free `SceneDelegate` wiring, script syntax, Swift tests, representative model loads, the f32 fixture, f16/q4 image smoke tests, `compare-image ft_places2 --steps 2`, `benchmark-image ft_places2-q4` against f16, and trimmed iPad staging for both the default q4 package and the 191M size-target candidate.
 
 For heavier checks:
 

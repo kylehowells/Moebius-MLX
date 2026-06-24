@@ -238,6 +238,32 @@ if ! grep -q '200.50' "$benchmark_report_dir/benchmark.tsv"; then
 fi
 printf 'Checked benchmark TSV, summary, and five PNG charts.\n'
 
+log "Checking demo project cleanup and lifecycle wiring"
+if [ -d "Demo/MoebiusDemo---old" ]; then
+	printf 'Old broken demo project should have been removed: Demo/MoebiusDemo---old\n' >&2
+	exit 1
+fi
+require_file "Demo/MoebiusDemo/MoebiusDemo/SceneDelegate.swift"
+require_file "Demo/MoebiusDemo/MoebiusDemo/ViewController.swift"
+require_file "Demo/MoebiusDemo/MoebiusDemo/Info.plist"
+if find Demo -name 'Main.storyboard' -print -quit | grep -q .; then
+	printf 'Demo should not contain a main storyboard.\n' >&2
+	exit 1
+fi
+if grep -q 'UIMainStoryboardFile' Demo/MoebiusDemo/MoebiusDemo/Info.plist; then
+	printf 'Info.plist should not reference UIMainStoryboardFile.\n' >&2
+	exit 1
+fi
+if ! grep -q 'UISceneDelegateClassName' Demo/MoebiusDemo/MoebiusDemo/Info.plist; then
+	printf 'Info.plist should configure a scene delegate.\n' >&2
+	exit 1
+fi
+if ! grep -q 'window.rootViewController = ViewController()' Demo/MoebiusDemo/MoebiusDemo/SceneDelegate.swift; then
+	printf 'SceneDelegate should install ViewController programmatically.\n' >&2
+	exit 1
+fi
+printf 'Checked demo cleanup, SceneDelegate wiring, and storyboard-free main UI setup.\n'
+
 log "Checking final documentation references"
 require_nonempty_file "Docs/PROJECT.md"
 require_nonempty_file "Docs/API.md"
