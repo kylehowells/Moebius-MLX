@@ -6,6 +6,8 @@ Port Moebius image inpainting to Swift/MLX so it can run locally on Apple Silico
 
 Repository: `https://github.com/kylehowells/Moebius-MLX`
 
+The GitHub workflow in `.github/workflows/ci.yml` covers source-only checks that can run without the external model artifact directory: Swift package tests, CLI help, shell/Python helper syntax, and checked-in benchmark report validation. Full model-artifact and Catalyst verification remains a local gate through `Scripts/verify_local.sh`.
+
 The requested deliverables are:
 
 - converted MLX model artifacts in f32, f16, and lower precision variants

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  package:
+    name: Swift package and repo checks
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Print tool versions
+        run: |
+          swift --version
+          xcodebuild -version
+          python3 --version
+
+      - name: Resolve Swift package dependencies
+        run: swift package resolve
+
+      - name: Run Swift tests
+        run: swift test
+
+      - name: Check CLI help
+        run: swift run moebius-mlx --help
+
+      - name: Check shell script syntax
+        run: |
+          bash -n \
+            Scripts/build_mlx_metallib.sh \
+            Scripts/stage_models_for_ios.sh \
+            Scripts/verify_local.sh \
+            Scripts/benchmark_fidelity.sh \
+            Scripts/run_benchmark_report.sh \
+            Scripts/benchmark_image.sh \
+            Scripts/run_image_benchmark_report.sh \
+            Scripts/run_device_autorun.sh
+
+      - name: Check Python helper syntax
+        run: |
+          python3 -m py_compile \
+            Scripts/audit_model_size.py \
+            Scripts/convert_moebius.py \
+            Scripts/generate_reference_fixture.py \
+            Scripts/materialize_candidate_variants.py \
+            Scripts/plot_benchmark_report.py
+
+      - name: Check documentation artifacts
+        run: |
+          test -s README.md
+          test -s Docs/API.md
+          test -s Docs/PROJECT.md
+          report_dir="Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants"
+          test -s "$report_dir/benchmark.tsv"
+          test -s "$report_dir/summary.md"
+          grep -q "ft_places2-q4-all-spatial-vae" "$report_dir/benchmark.tsv"
+          grep -q "200.50" "$report_dir/benchmark.tsv"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          report = Path("Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants")
+          for name in [
+              "fidelity_errors.png",
+              "performance_timings.png",
+              "model_size.png",
+              "speed_fidelity_tradeoff.png",
+              "size_fidelity_tradeoff.png",
+          ]:
+              path = report / name
+              data = path.read_bytes()
+              if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                  raise SystemExit(f"not a PNG: {path}")
+          PY

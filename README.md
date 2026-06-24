@@ -4,6 +4,8 @@ Swift/MLX port of Moebius image inpainting for Apple Silicon macOS, Mac Catalyst
 
 GitHub: `https://github.com/kylehowells/Moebius-MLX`
 
+CI: `.github/workflows/ci.yml` runs Swift package tests, CLI help, script syntax checks, Python helper syntax checks, and checked-in benchmark report validation. Full model verification still uses `Scripts/verify_local.sh` locally because the converted model artifacts live outside the Git repo.
+
 This repo contains:
 
 - `MoebiusMLX`: Swift library target for loading converted Moebius artifacts and running inference.
