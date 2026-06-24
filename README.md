@@ -29,7 +29,7 @@ Converted model artifacts live outside the Git repo:
 `MoebiusModelResolver` searches, in order:
 
 - explicit `preferredDirectory` / `modelRoot` arguments
-- `MOEBIUS_MLX_MODEL_DIR`
+- `MOEBIUS_MLX_MODEL_DIR`, plus `MOEBIUS_MODEL_ROOT` as a demo/autorun compatibility alias
 - app bundle resources: `<Resources>/<variant>`, `<Resources>/Moebius-MLX/<variant>`, or `<Resources>/Models/<variant>`
 - app Application Support and Documents folders, directly or under `Moebius-MLX`
 - the local development path above

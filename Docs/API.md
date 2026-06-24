@@ -67,7 +67,7 @@ let outputRGB01 = try pipeline.runImageRGBFloats(
 
 `MoebiusModelResolver`
 
-- `resolve(name:preferredDirectory:modelRoot:)`: finds a variant directory by explicit directory, model root, `MOEBIUS_MLX_MODEL_DIR`, app bundle resources, Application Support, Documents, or the local development model path.
+- `resolve(name:preferredDirectory:modelRoot:)`: finds a variant directory by explicit directory, model root, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, app bundle resources, Application Support, Documents, or the local development model path.
 
 `MoebiusModel`
 
@@ -150,7 +150,7 @@ Scripts/run_benchmark_report.sh \
 
 ## UIKit Demo Integration
 
-The demo app uses the same `MoebiusPipeline.runImageRGBFloats` API as the CLI. It resolves model variants from bundle resources, Application Support, Documents, `MOEBIUS_MODEL_ROOT`, and the development model directory. The Mac Catalyst autorun path is controlled by:
+The demo app uses the same `MoebiusPipeline.runImageRGBFloats` API as the CLI. It resolves model variants from bundle resources, Application Support, Documents, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, and the development model directory. `MOEBIUS_MODEL_ROOT` is kept as a demo/autorun compatibility alias for the shared resolver's `MOEBIUS_MLX_MODEL_DIR`. The Mac Catalyst autorun path is controlled by:
 
 ```text
 MOEBIUS_DEMO_AUTORUN=1

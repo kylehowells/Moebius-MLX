@@ -114,6 +114,7 @@ run_catalyst_autorun() {
 	fi
 	rm -f "$status_file" "$log_file"
 
+	MOEBIUS_MLX_MODEL_DIR="$MODEL_ROOT" \
 	MOEBIUS_MODEL_ROOT="$MODEL_ROOT" \
 	MOEBIUS_DEMO_AUTORUN=1 \
 	MOEBIUS_DEMO_COMPARE="$compare" \

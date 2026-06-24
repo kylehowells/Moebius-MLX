@@ -110,7 +110,7 @@ let rgb01 = try pipeline.runImageRGBFloats(input: input, options: options)
 
 See `Docs/API.md` for the command-level CLI reference and focused Swift API notes.
 
-`MoebiusModelResolver` is intentionally usable from both command-line tools and apps. It searches explicit `preferredDirectory` / `modelRoot` arguments, `MOEBIUS_MLX_MODEL_DIR`, app bundle resource folders, app Application Support/Documents folders, and finally the local development path:
+`MoebiusModelResolver` is intentionally usable from both command-line tools and apps. It searches explicit `preferredDirectory` / `modelRoot` arguments, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT` as a demo/autorun compatibility alias, app bundle resource folders, app Application Support/Documents folders, and finally the local development path:
 
 ```text
 /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX

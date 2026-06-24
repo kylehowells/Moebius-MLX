@@ -332,6 +332,20 @@ public enum MoebiusRuntime {
 
 public enum MoebiusModelResolver {
 	public static func resolve(name: String, preferredDirectory: URL? = nil, modelRoot: URL? = nil) throws -> URL {
+		return try self.resolve(
+			name: name,
+			preferredDirectory: preferredDirectory,
+			modelRoot: modelRoot,
+			environment: ProcessInfo.processInfo.environment
+		)
+	}
+
+	static func resolve(
+		name: String,
+		preferredDirectory: URL? = nil,
+		modelRoot: URL? = nil,
+		environment: [String: String]
+	) throws -> URL {
 		let fileManager: FileManager = .default
 		var candidates: [URL] = []
 
@@ -342,10 +356,12 @@ public enum MoebiusModelResolver {
 		if let modelRoot {
 			candidates.append(modelRoot.appendingPathComponent(name, isDirectory: true))
 		}
-		if let env = ProcessInfo.processInfo.environment["MOEBIUS_MLX_MODEL_DIR"], !env.isEmpty {
-			let envURL: URL = URL(fileURLWithPath: env, isDirectory: true)
-			candidates.append(envURL)
-			candidates.append(envURL.appendingPathComponent(name, isDirectory: true))
+		for environmentKey in ["MOEBIUS_MLX_MODEL_DIR", "MOEBIUS_MODEL_ROOT"] {
+			if let env = environment[environmentKey], !env.isEmpty {
+				let envURL: URL = URL(fileURLWithPath: env, isDirectory: true)
+				candidates.append(envURL)
+				candidates.append(envURL.appendingPathComponent(name, isDirectory: true))
+			}
 		}
 		if let resourceURL = Bundle.main.resourceURL {
 			candidates.append(resourceURL.appendingPathComponent(name, isDirectory: true))

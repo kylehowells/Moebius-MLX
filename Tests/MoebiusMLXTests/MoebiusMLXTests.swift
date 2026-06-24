@@ -82,6 +82,46 @@ import MLX
 	}
 }
 
+@Test func resolverFindsEnvironmentModelRoots() async throws {
+	let temporaryRoot: URL = FileManager.default.temporaryDirectory
+		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
+	defer {
+		try? FileManager.default.removeItem(at: temporaryRoot)
+	}
+
+	let mlxRoot: URL = temporaryRoot.appendingPathComponent("mlx-root", isDirectory: true)
+	let mlxModelDirectory: URL = mlxRoot.appendingPathComponent("ft_places2-q4", isDirectory: true)
+	try FileManager.default.createDirectory(at: mlxModelDirectory, withIntermediateDirectories: true)
+	try Data("{}".utf8).write(to: mlxModelDirectory.appendingPathComponent("manifest.json"))
+
+	let resolvedMLXRoot: URL = try MoebiusModelResolver.resolve(
+		name: "ft_places2-q4",
+		environment: ["MOEBIUS_MLX_MODEL_DIR": mlxRoot.path]
+	)
+	#expect(resolvedMLXRoot.standardizedFileURL == mlxModelDirectory.standardizedFileURL)
+
+	let demoRoot: URL = temporaryRoot.appendingPathComponent("demo-root", isDirectory: true)
+	let demoModelDirectory: URL = demoRoot.appendingPathComponent("ft_places2-f16", isDirectory: true)
+	try FileManager.default.createDirectory(at: demoModelDirectory, withIntermediateDirectories: true)
+	try Data("{}".utf8).write(to: demoModelDirectory.appendingPathComponent("manifest.json"))
+
+	let resolvedDemoRoot: URL = try MoebiusModelResolver.resolve(
+		name: "ft_places2-f16",
+		environment: ["MOEBIUS_MODEL_ROOT": demoRoot.path]
+	)
+	#expect(resolvedDemoRoot.standardizedFileURL == demoModelDirectory.standardizedFileURL)
+
+	let directDirectory: URL = temporaryRoot.appendingPathComponent("direct-env", isDirectory: true)
+	try FileManager.default.createDirectory(at: directDirectory, withIntermediateDirectories: true)
+	try Data("{}".utf8).write(to: directDirectory.appendingPathComponent("manifest.json"))
+
+	let resolvedDirect: URL = try MoebiusModelResolver.resolve(
+		name: "ignored",
+		environment: ["MOEBIUS_MODEL_ROOT": directDirectory.path]
+	)
+	#expect(resolvedDirect.standardizedFileURL == directDirectory.standardizedFileURL)
+}
+
 @Test func deploymentInfoUsesManifestSelectedFilesAndResolvesSymlinks() async throws {
 	let temporaryRoot: URL = FileManager.default.temporaryDirectory
 		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
