@@ -23,8 +23,14 @@ jobs:
       - name: Resolve Swift package dependencies
         run: swift package resolve
 
+      - name: Build Swift test products
+        run: swift build --build-tests
+
+      - name: Build MLX Metal library
+        run: Scripts/build_mlx_metallib.sh debug
+
       - name: Run Swift tests
-        run: swift test
+        run: swift test --skip-build
 
       - name: Check CLI help
         run: swift run moebius-mlx --help
