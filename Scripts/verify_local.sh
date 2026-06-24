@@ -309,9 +309,19 @@ if ! Scripts/run_device_autorun.sh --help | grep -q -- '--dry-run'; then
 	printf 'run_device_autorun.sh help should document --dry-run\n' >&2
 	exit 1
 fi
-device_compare_plan="$(Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run)"
+if ! Scripts/run_device_autorun.sh --help | grep -q -- '--wait-seconds'; then
+	printf 'run_device_autorun.sh help should document --wait-seconds\n' >&2
+	exit 1
+fi
+if ! Scripts/run_device_autorun.sh --help | grep -q -- '--poll-seconds'; then
+	printf 'run_device_autorun.sh help should document --poll-seconds\n' >&2
+	exit 1
+fi
+device_compare_plan="$(Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 30 --poll-seconds 3 --dry-run)"
 for expected in \
 	'compare: 1' \
+	'wait_seconds: 30' \
+	'poll_seconds: 3' \
 	'ft_places2-f32' \
 	'ft_places2-f16' \
 	'ft_places2-q8' \

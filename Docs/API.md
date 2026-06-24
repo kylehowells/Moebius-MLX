@@ -168,6 +168,7 @@ Scripts/stage_models_for_ios.sh --output /tmp/moebius-ipad-models ft_places2-q4
 Scripts/run_device_autorun.sh --variant ft_places2-q4
 Scripts/run_device_autorun.sh --model ft_places2 --compare
 Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run
+Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300
 ```
 
-The device autorun helper exits before build/install if CoreDevice reports the configured iPad as unavailable. `--compare` stages every visible precision for the selected model and launches the same comparison path as the Catalyst verifier. `--dry-run` prints the resolved staging list and launch environment before device lookup, so the compare plan can be validated while the physical iPad is offline.
+The device autorun helper exits before build/install if CoreDevice reports the configured iPad as unavailable. `--wait-seconds` turns that into a bounded poll before build/install. `--compare` stages every visible precision for the selected model and launches the same comparison path as the Catalyst verifier. `--dry-run` prints the resolved staging list and launch environment before device lookup, so the compare plan can be validated while the physical iPad is offline.

@@ -342,9 +342,10 @@ The helper wraps the known-good manual sequence: device build, app install, mode
 Scripts/run_device_autorun.sh --variant ft_places2-q4-all-spatial-vae
 Scripts/run_device_autorun.sh --model ft_places2 --compare
 Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run
+Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300
 ```
 
-`--compare` stages every visible precision for the selected model. For `ft_places2`, it stages the six standard precision variants plus the `q4 322M` and `q4 200M` package-size candidates, matching the demo comparison UI. `--dry-run` prints that resolved staging list and the autorun launch environment before touching CoreDevice, which keeps the next physical-device attempt auditable while the iPad is unavailable.
+`--compare` stages every visible precision for the selected model. For `ft_places2`, it stages the six standard precision variants plus the `q4 322M` and `q4 200M` package-size candidates, matching the demo comparison UI. `--dry-run` prints that resolved staging list and the autorun launch environment before touching CoreDevice, which keeps the next physical-device attempt auditable while the iPad is unavailable. `--wait-seconds` can be used for the actual attempt to poll for an unlocked/connected device before build, install, copy, and launch.
 
 The latest successful provisioning attempt copied the original staged q4 package to the iPad app container and read the manifest back. A later 2026-06-24 continuation check could not launch the app because CoreDevice reported the iPad as unavailable:
 

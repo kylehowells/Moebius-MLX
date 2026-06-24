@@ -11,6 +11,8 @@ VARIANT="${MODEL}-${PRECISION}"
 DERIVED_DATA="${DERIVED_DATA:-/tmp/MoebiusDemoDeviceDerivedData}"
 STAGE_DIR="${STAGE_DIR:-/tmp/moebius-ipad-autorun-stage}"
 STATUS_OUT="${STATUS_OUT:-/tmp/moebius-ipad-autorun-status.txt}"
+WAIT_SECONDS=0
+POLL_SECONDS=5
 SKIP_BUILD=0
 SKIP_INSTALL=0
 SKIP_COPY=0
@@ -39,6 +41,8 @@ Options:
   --derived-data DIR DerivedData path. Default: $DERIVED_DATA
   --stage-dir DIR    Temporary staging path. Default: $STAGE_DIR
   --status-out PATH  Host path for copied status. Default: $STATUS_OUT
+  --wait-seconds N   Wait up to N seconds for the device. Default: $WAIT_SECONDS
+  --poll-seconds N   Device wait poll interval. Default: $POLL_SECONDS
   --skip-build       Reuse existing device build.
   --skip-install     Reuse installed app.
   --skip-copy        Reuse model already copied to app container.
@@ -91,6 +95,14 @@ while [ "$#" -gt 0 ]; do
 			STATUS_OUT="$2"
 			shift 2
 			;;
+		--wait-seconds)
+			WAIT_SECONDS="$2"
+			shift 2
+			;;
+		--poll-seconds)
+			POLL_SECONDS="$2"
+			shift 2
+			;;
 		--skip-build)
 			SKIP_BUILD=1
 			shift
@@ -118,6 +130,23 @@ while [ "$#" -gt 0 ]; do
 			;;
 	esac
 done
+
+case "$WAIT_SECONDS" in
+	''|*[!0-9]*)
+		printf -- '--wait-seconds must be a non-negative integer: %s\n' "$WAIT_SECONDS" >&2
+		exit 2
+		;;
+esac
+case "$POLL_SECONDS" in
+	''|*[!0-9]*)
+		printf -- '--poll-seconds must be a positive integer: %s\n' "$POLL_SECONDS" >&2
+		exit 2
+		;;
+esac
+if [ "$POLL_SECONDS" -eq 0 ]; then
+	printf -- '--poll-seconds must be greater than zero.\n' >&2
+	exit 2
+fi
 
 if [ "$VARIANT_WAS_EXPLICIT" -eq 1 ]; then
 	case "$VARIANT" in
@@ -178,6 +207,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	printf 'derived_data: %s\n' "$DERIVED_DATA"
 	printf 'stage_dir: %s\n' "$STAGE_DIR"
 	printf 'status_out: %s\n' "$STATUS_OUT"
+	printf 'wait_seconds: %s\n' "$WAIT_SECONDS"
+	printf 'poll_seconds: %s\n' "$POLL_SECONDS"
 	printf 'stage_variants:\n'
 	for stage_variant in "${stage_variants[@]}"; do
 		printf '  %s\n' "$stage_variant"
@@ -186,23 +217,31 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	exit 0
 fi
 
-device_line="$(xcrun devicectl list devices | awk -v id="$DEVICE_ID" '$0 ~ id { print; found=1 } END { if (!found) exit 1 }')" || {
-	printf 'Device not found: %s\n' "$DEVICE_ID" >&2
-	xcrun devicectl list devices >&2
-	exit 1
-}
-case "$device_line" in
-	*" unavailable "*)
-		printf 'Device is not available:\n%s\n\n' "$device_line" >&2
-		printf 'Unlock/connect the device, then rerun this script.\n' >&2
+device_line=""
+deadline="$(( $(date +%s) + WAIT_SECONDS ))"
+while :; do
+	device_line="$(xcrun devicectl list devices | awk -v id="$DEVICE_ID" '$0 ~ id { print; found=1 } END { if (!found) exit 1 }')" || {
+		printf 'Device not found: %s\n' "$DEVICE_ID" >&2
+		xcrun devicectl list devices >&2
 		exit 1
-		;;
-	*" available "*) ;;
-	*)
-		printf 'Device is not in an available state:\n%s\n' "$device_line" >&2
-		exit 1
-		;;
-esac
+	}
+	case "$device_line" in
+		*" available "*) break ;;
+		*" unavailable "*)
+			if [ "$WAIT_SECONDS" -eq 0 ] || [ "$(date +%s)" -ge "$deadline" ]; then
+				printf 'Device is not available:\n%s\n\n' "$device_line" >&2
+				printf 'Unlock/connect the device, then rerun this script.\n' >&2
+				exit 1
+			fi
+			printf 'Waiting for device to become available: %s\n' "$device_line" >&2
+			sleep "$POLL_SECONDS"
+			;;
+		*)
+			printf 'Device is not in an available state:\n%s\n' "$device_line" >&2
+			exit 1
+			;;
+	esac
+done
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
 	xcodebuild \
