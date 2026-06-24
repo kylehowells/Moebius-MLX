@@ -1,0 +1,375 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODEL_ROOT="${MOEBIUS_MLX_MODEL_DIR:-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX}"
+RUN_DEMO_BUILDS=0
+RUN_ALL_INSPECTS=0
+FIDELITY_FIXTURE=""
+FIDELITY_REFERENCE="onnx"
+
+usage() {
+	printf 'Usage: %s [--models-root PATH] [--demo-builds] [--all-inspects] [--fidelity-fixture PATH] [--fidelity-reference NAME]\n' "$0"
+}
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--models-root)
+			shift
+			if [ "$#" -eq 0 ]; then
+				usage
+				exit 2
+			fi
+			MODEL_ROOT="$1"
+			;;
+		--demo-builds)
+			RUN_DEMO_BUILDS=1
+			;;
+		--all-inspects)
+			RUN_ALL_INSPECTS=1
+			;;
+		--fidelity-fixture)
+			shift
+			if [ "$#" -eq 0 ]; then
+				usage
+				exit 2
+			fi
+			FIDELITY_FIXTURE="$1"
+			;;
+		--fidelity-reference)
+			shift
+			if [ "$#" -eq 0 ]; then
+				usage
+				exit 2
+			fi
+			FIDELITY_REFERENCE="$1"
+			;;
+		--help|-h)
+			usage
+			exit 0
+			;;
+		*)
+			usage
+			exit 2
+			;;
+	esac
+	shift
+done
+
+cd "$REPO_ROOT"
+
+families=(pretrained ft_places2 ft_celebahq ft_ffhq)
+precisions=(f32 f16 q8 q4 mxfp8 mxfp4)
+quant_precisions=(q8 q4 mxfp8 mxfp4)
+
+log() {
+	printf '\n==> %s\n' "$1"
+}
+
+require_file() {
+	if [ ! -f "$1" ]; then
+		printf 'Missing file: %s\n' "$1" >&2
+		exit 1
+	fi
+}
+
+require_nonempty_file() {
+	require_file "$1"
+	if [ ! -s "$1" ]; then
+		printf 'Empty file: %s\n' "$1" >&2
+		exit 1
+	fi
+}
+
+require_png() {
+	require_nonempty_file "$1"
+	python3 - "$1" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if path.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+    raise SystemExit(f"Not a PNG file: {path}")
+PY
+}
+
+require_dir() {
+	if [ ! -d "$1" ]; then
+		printf 'Missing directory: %s\n' "$1" >&2
+		exit 1
+	fi
+}
+
+run_catalyst_autorun() {
+	local app_path="$1"
+	local precision="$2"
+	local status_name="$3"
+	shift 3
+	local expected_parts=("$@")
+	local status_file="/tmp/moebius-demo-${status_name}-status.txt"
+	local log_file="/tmp/moebius-demo-${status_name}.log"
+	local compare="0"
+	if [ "$status_name" = "compare" ]; then
+		compare="1"
+	fi
+	rm -f "$status_file" "$log_file"
+
+	MOEBIUS_MODEL_ROOT="$MODEL_ROOT" \
+	MOEBIUS_DEMO_AUTORUN=1 \
+	MOEBIUS_DEMO_COMPARE="$compare" \
+	MOEBIUS_DEMO_MODEL=ft_places2 \
+	MOEBIUS_DEMO_PRECISION="$precision" \
+	MOEBIUS_DEMO_STEPS=2 \
+	MOEBIUS_DEMO_AUTORUN_STATUS="$status_file" \
+	"$app_path/Contents/MacOS/MoebiusDemo" >"$log_file" 2>&1 &
+	local pid=$!
+	local status=""
+	for _ in $(seq 1 240); do
+		if [ -f "$status_file" ]; then
+			status="$(cat "$status_file")"
+			case "$status" in
+				done*|error*)
+					break
+					;;
+			esac
+		fi
+		sleep 1
+	done
+
+	kill "$pid" >/dev/null 2>&1 || true
+	wait "$pid" >/dev/null 2>&1 || true
+
+	if [ -z "$status" ]; then
+		printf 'Catalyst autorun did not write a final status. Log:\n' >&2
+		cat "$log_file" >&2 || true
+		exit 1
+	fi
+	if [[ "$status" != done* ]]; then
+		printf 'Catalyst autorun failed: %s\n' "$status" >&2
+		cat "$log_file" >&2 || true
+		exit 1
+	fi
+	for expected in "${expected_parts[@]}"; do
+		if [[ "$status" != *"$expected"* ]]; then
+			printf 'Catalyst autorun status missing "%s": %s\n' "$expected" "$status" >&2
+			exit 1
+		fi
+	done
+	printf '%s\n' "$status"
+}
+
+log "Checking converted artifact directories"
+require_dir "$MODEL_ROOT"
+
+for family in "${families[@]}"; do
+	for precision in "${precisions[@]}"; do
+		variant="$family-$precision"
+		variant_dir="$MODEL_ROOT/$variant"
+		require_dir "$variant_dir"
+		require_file "$variant_dir/manifest.json"
+		require_file "$variant_dir/unet.safetensors"
+		require_file "$variant_dir/vae_encoder.safetensors"
+		require_file "$variant_dir/vae_decoder.safetensors"
+	done
+done
+printf 'Found all 24 f32/f16/quantized model directories.\n'
+
+log "Checking experimental candidate model views"
+candidate_variants=(ft_places2-q4-ff-spatial-vae ft_places2-q4-all-spatial-vae)
+for variant in "${candidate_variants[@]}"; do
+	variant_dir="$MODEL_ROOT/$variant"
+	require_dir "$variant_dir"
+	require_file "$variant_dir/manifest.json"
+	require_file "$variant_dir/vae_encoder_quantized.safetensors"
+	require_file "$variant_dir/vae_decoder_quantized.safetensors"
+	if ! grep -q '"vaeEncoderQuantized"' "$variant_dir/manifest.json"; then
+		printf 'Candidate manifest does not reference vaeEncoderQuantized: %s\n' "$variant_dir/manifest.json" >&2
+		exit 1
+	fi
+	if ! grep -q '"vaeDecoderQuantized"' "$variant_dir/manifest.json"; then
+		printf 'Candidate manifest does not reference vaeDecoderQuantized: %s\n' "$variant_dir/manifest.json" >&2
+		exit 1
+	fi
+done
+require_file "$MODEL_ROOT/ft_places2-q4-ff-spatial-vae/unet_quantized_pointwise_feedforward_spatial.safetensors"
+require_file "$MODEL_ROOT/ft_places2-q4-all-spatial-vae/unet_quantized_pointwise_all_spatial.safetensors"
+printf 'Found ft_places2 q4 candidate views and quantized VAE files.\n'
+
+log "Checking quantized UNet artifacts"
+quantized_count=0
+for family in "${families[@]}"; do
+	for precision in "${quant_precisions[@]}"; do
+		variant_dir="$MODEL_ROOT/$family-$precision"
+		require_file "$variant_dir/unet_quantized.safetensors"
+		if ! grep -q '"unetQuantized"' "$variant_dir/manifest.json"; then
+			printf 'Manifest does not reference unetQuantized: %s\n' "$variant_dir/manifest.json" >&2
+			exit 1
+		fi
+		quantized_count=$((quantized_count + 1))
+	done
+done
+if [ "$quantized_count" != "16" ]; then
+	printf 'Expected to validate 16 standard quantized UNet files, validated %s\n' "$quantized_count" >&2
+	exit 1
+fi
+printf 'Found all 16 quantized UNet files and manifest references.\n'
+
+log "Checking checked-in benchmark report artifacts"
+benchmark_report_dir="Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants"
+require_dir "$benchmark_report_dir"
+require_nonempty_file "$benchmark_report_dir/benchmark.tsv"
+require_nonempty_file "$benchmark_report_dir/summary.md"
+for chart in \
+	fidelity_errors.png \
+	performance_timings.png \
+	model_size.png \
+	speed_fidelity_tradeoff.png \
+	size_fidelity_tradeoff.png
+do
+	require_png "$benchmark_report_dir/$chart"
+done
+if ! grep -q 'ft_places2-q4-all-spatial-vae' "$benchmark_report_dir/benchmark.tsv"; then
+	printf 'Benchmark TSV does not include the 200 MB visible demo candidate.\n' >&2
+	exit 1
+fi
+if ! grep -q '200.50' "$benchmark_report_dir/benchmark.tsv"; then
+	printf 'Benchmark TSV does not include the expected 200.50 MB package size.\n' >&2
+	exit 1
+fi
+printf 'Checked benchmark TSV, summary, and five PNG charts.\n'
+
+log "Checking final documentation references"
+require_nonempty_file "Docs/PROJECT.md"
+require_nonempty_file "Docs/API.md"
+require_nonempty_file "README.md"
+for expected in \
+	"MoebiusModelResolver" \
+	"MoebiusPipeline" \
+	"MoebiusModelDeploymentInfo" \
+	"benchmark-fixture" \
+	"run_device_autorun.sh"
+do
+	if ! grep -q "$expected" Docs/API.md; then
+		printf 'Docs/API.md missing expected reference: %s\n' "$expected" >&2
+		exit 1
+	fi
+done
+if ! grep -q 'Docs/API.md' README.md; then
+	printf 'README.md does not link Docs/API.md\n' >&2
+	exit 1
+fi
+if ! grep -q 'Docs/API.md' Docs/PROJECT.md; then
+	printf 'Docs/PROJECT.md does not link Docs/API.md\n' >&2
+	exit 1
+fi
+printf 'Checked README, project writeup, and API/CLI reference.\n'
+
+log "Checking helper script syntax"
+bash -n \
+	Scripts/build_mlx_metallib.sh \
+	Scripts/stage_models_for_ios.sh \
+	Scripts/verify_local.sh \
+	Scripts/benchmark_fidelity.sh \
+	Scripts/run_benchmark_report.sh \
+	Scripts/benchmark_image.sh \
+	Scripts/run_image_benchmark_report.sh \
+	Scripts/run_device_autorun.sh
+
+log "Running Swift tests"
+swift test
+
+if [ "$RUN_ALL_INSPECTS" -eq 1 ]; then
+	log "Inspecting all 24 variants"
+	for family in "${families[@]}"; do
+		for precision in "${precisions[@]}"; do
+			swift run moebius-mlx inspect "$family-$precision" >/dev/null
+			printf 'inspected %s-%s\n' "$family" "$precision"
+		done
+	done
+else
+	log "Inspecting representative variants"
+	swift run moebius-mlx inspect ft_places2-f32 >/dev/null
+	swift run moebius-mlx inspect ft_places2-f16 >/dev/null
+	swift run moebius-mlx inspect ft_places2-q4 >/dev/null
+	swift run moebius-mlx inspect ft_places2-q4-all-spatial-vae >/dev/null
+	printf 'inspected ft_places2-f32, ft_places2-f16, ft_places2-q4, ft_places2-q4-all-spatial-vae\n'
+fi
+
+log "Running MLX smoke checks"
+swift run moebius-mlx verify-fixture ft_places2-f32
+swift run moebius-mlx image-smoke ft_places2-f16 --steps 2
+swift run moebius-mlx image-smoke ft_places2-q4 --steps 2
+swift run moebius-mlx compare-image ft_places2 --steps 2
+swift run moebius-mlx benchmark-image ft_places2-q4 \
+	--reference-model ft_places2-f16 \
+	--reference-name f16-image-verify \
+	--steps 2 \
+	--samples gradient-circle
+
+log "Checking trimmed iPad staging package"
+staging_dir="$(mktemp -d /tmp/moebius-stage-verify.XXXXXX)"
+trap 'rm -rf "$staging_dir"' EXIT
+Scripts/stage_models_for_ios.sh --output "$staging_dir" ft_places2-q4
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4/manifest.json"
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4/unet_quantized_pointwise_feedforward.safetensors"
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4/vae_encoder.safetensors"
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4/vae_decoder.safetensors"
+if [ -f "$staging_dir/Moebius-MLX/ft_places2-q4/unet.safetensors" ]; then
+	printf 'Trimmed quantized staging package should not include unet.safetensors\n' >&2
+	exit 1
+fi
+swift run moebius-mlx inspect "$staging_dir/Moebius-MLX/ft_places2-q4" >/dev/null
+printf 'trimmed ft_places2-q4 staging package loaded successfully\n'
+
+Scripts/stage_models_for_ios.sh --output "$staging_dir" ft_places2-q4-all-spatial-vae
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4-all-spatial-vae/manifest.json"
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4-all-spatial-vae/unet_quantized_pointwise_all_spatial.safetensors"
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4-all-spatial-vae/vae_encoder_quantized.safetensors"
+require_file "$staging_dir/Moebius-MLX/ft_places2-q4-all-spatial-vae/vae_decoder_quantized.safetensors"
+if [ -f "$staging_dir/Moebius-MLX/ft_places2-q4-all-spatial-vae/unet.safetensors" ]; then
+	printf 'Trimmed candidate staging package should not include unet.safetensors\n' >&2
+	exit 1
+fi
+swift run moebius-mlx inspect "$staging_dir/Moebius-MLX/ft_places2-q4-all-spatial-vae" >/dev/null
+printf 'trimmed ft_places2-q4-all-spatial-vae staging package loaded successfully\n'
+
+if [ -n "$FIDELITY_FIXTURE" ]; then
+	log "Running cross-runtime fidelity benchmark"
+	Scripts/benchmark_fidelity.sh \
+		--family ft_places2 \
+		--reference "$FIDELITY_REFERENCE" \
+		--fixture "$FIDELITY_FIXTURE" \
+		--precisions f32,f16,q8,q4,mxfp8,mxfp4
+fi
+
+if [ "$RUN_DEMO_BUILDS" -eq 1 ]; then
+	demo_derived_data="/tmp/moebius-demo-verify-derived-data"
+	rm -rf "$demo_derived_data"
+
+	log "Building demo for Mac Catalyst"
+	xcodebuild \
+		-project Demo/MoebiusDemo/MoebiusDemo.xcodeproj \
+		-scheme MoebiusDemo \
+		-destination 'platform=macOS,variant=Mac Catalyst' \
+		-derivedDataPath "$demo_derived_data" \
+		build
+
+	catalyst_app="$demo_derived_data/Build/Products/Debug-maccatalyst/MoebiusDemo.app"
+	require_dir "$catalyst_app"
+
+	log "Running Catalyst autorun size checks"
+	run_catalyst_autorun "$catalyst_app" f16 f16 "ft_places2-f16" "model_mb=619.89"
+	run_catalyst_autorun "$catalyst_app" q4 q4 "ft_places2-q4" "model_mb=475.67"
+	run_catalyst_autorun "$catalyst_app" ft_places2-q4-all-spatial-vae q4-200 "ft_places2-q4-all-spatial-vae" "model_mb=200.50"
+	run_catalyst_autorun "$catalyst_app" f16 compare "done comparison 8/8" "ft_places2-q4-all-spatial-vae:200.50"
+
+	log "Building demo for iOS Simulator"
+	xcodebuild \
+		-project Demo/MoebiusDemo/MoebiusDemo.xcodeproj \
+		-scheme MoebiusDemo \
+		-destination 'generic/platform=iOS Simulator' \
+		-derivedDataPath "$demo_derived_data" \
+		build
+fi
+
+log "Verification complete"
