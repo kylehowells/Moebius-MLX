@@ -407,11 +407,12 @@ fi
 
 if [ "$RUN_DEMO_BUILDS" -eq 1 ]; then
 	demo_derived_data="/tmp/moebius-demo-verify-derived-data"
+	demo_project="$REPO_ROOT/Demo/MoebiusDemo/MoebiusDemo.xcodeproj"
 	rm -rf "$demo_derived_data"
 
 	log "Building demo for Mac Catalyst"
 	xcodebuild \
-		-project Demo/MoebiusDemo/MoebiusDemo.xcodeproj \
+		-project "$demo_project" \
 		-scheme MoebiusDemo \
 		-destination 'platform=macOS,variant=Mac Catalyst' \
 		-derivedDataPath "$demo_derived_data" \
@@ -428,7 +429,7 @@ if [ "$RUN_DEMO_BUILDS" -eq 1 ]; then
 
 	log "Building demo for iOS Simulator"
 	xcodebuild \
-		-project Demo/MoebiusDemo/MoebiusDemo.xcodeproj \
+		-project "$demo_project" \
 		-scheme MoebiusDemo \
 		-destination 'generic/platform=iOS Simulator' \
 		-derivedDataPath "$demo_derived_data" \
