@@ -2,6 +2,8 @@
 
 Swift/MLX port of Moebius image inpainting for Apple Silicon macOS, Mac Catalyst, and iPadOS.
 
+GitHub: `https://github.com/kylehowells/Moebius-MLX`
+
 This repo contains:
 
 - `MoebiusMLX`: Swift library target for loading converted Moebius artifacts and running inference.

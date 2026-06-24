@@ -4,6 +4,8 @@
 
 Port Moebius image inpainting to Swift/MLX so it can run locally on Apple Silicon macOS and in an iPadOS app. Mac Catalyst is the practical local demo target; iPadOS remains the primary deployment target.
 
+Repository: `https://github.com/kylehowells/Moebius-MLX`
+
 The requested deliverables are:
 
 - converted MLX model artifacts in f32, f16, and lower precision variants
