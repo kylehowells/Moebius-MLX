@@ -47,6 +47,25 @@ jobs:
             Scripts/run_image_benchmark_report.sh \
             Scripts/run_device_autorun.sh
 
+      - name: Check device autorun dry run
+        run: |
+          plan="$(Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run)"
+          printf '%s\n' "$plan"
+          for expected in \
+            "compare: 1" \
+            "ft_places2-f32" \
+            "ft_places2-f16" \
+            "ft_places2-q8" \
+            "ft_places2-q4" \
+            "ft_places2-mxfp8" \
+            "ft_places2-mxfp4" \
+            "ft_places2-q4-ff-spatial-vae" \
+            "ft_places2-q4-all-spatial-vae" \
+            '"MOEBIUS_DEMO_COMPARE":"1"'
+          do
+            printf '%s\n' "$plan" | grep -q "$expected"
+          done
+
       - name: Check Python helper syntax
         run: |
           python3 -m py_compile \
