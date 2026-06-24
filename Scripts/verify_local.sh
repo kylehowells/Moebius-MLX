@@ -305,6 +305,28 @@ if ! Scripts/run_device_autorun.sh --help | grep -q -- '--compare'; then
 	printf 'run_device_autorun.sh help should document --compare\n' >&2
 	exit 1
 fi
+if ! Scripts/run_device_autorun.sh --help | grep -q -- '--dry-run'; then
+	printf 'run_device_autorun.sh help should document --dry-run\n' >&2
+	exit 1
+fi
+device_compare_plan="$(Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run)"
+for expected in \
+	'compare: 1' \
+	'ft_places2-f32' \
+	'ft_places2-f16' \
+	'ft_places2-q8' \
+	'ft_places2-q4' \
+	'ft_places2-mxfp8' \
+	'ft_places2-mxfp4' \
+	'ft_places2-q4-ff-spatial-vae' \
+	'ft_places2-q4-all-spatial-vae' \
+	'"MOEBIUS_DEMO_COMPARE":"1"'
+do
+	if ! printf '%s\n' "$device_compare_plan" | grep -q "$expected"; then
+		printf 'run_device_autorun.sh dry-run compare plan missing "%s"\n' "$expected" >&2
+		exit 1
+	fi
+done
 
 log "Running Swift tests"
 swift test

@@ -300,9 +300,10 @@ The repeatable physical-device autorun helper wraps build, install, staging, mod
 Scripts/run_device_autorun.sh --variant ft_places2-q4
 Scripts/run_device_autorun.sh --variant ft_places2-q4-all-spatial-vae
 Scripts/run_device_autorun.sh --model ft_places2 --compare
+Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run
 ```
 
-It defaults to Kyle's iPad Pro CoreDevice id and exits before build/install if `devicectl` reports the device as unavailable. In compare mode, it stages the six standard visible precisions for the selected model; for `ft_places2`, it also stages the `q4 322M` and `q4 200M` candidate packages shown in the demo.
+It defaults to Kyle's iPad Pro CoreDevice id and exits before build/install if `devicectl` reports the device as unavailable. In compare mode, it stages the six standard visible precisions for the selected model; for `ft_places2`, it also stages the `q4 322M` and `q4 200M` candidate packages shown in the demo. `--dry-run` prints the resolved variant list and launch environment without touching CoreDevice, which is useful when checking the next physical-device run while the iPad is offline.
 
 ## Library Usage
 

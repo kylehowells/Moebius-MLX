@@ -16,6 +16,7 @@ SKIP_INSTALL=0
 SKIP_COPY=0
 VARIANT_WAS_EXPLICIT=0
 COMPARE=0
+DRY_RUN=0
 
 usage() {
 	cat <<USAGE
@@ -41,6 +42,7 @@ Options:
   --skip-build       Reuse existing device build.
   --skip-install     Reuse installed app.
   --skip-copy        Reuse model already copied to app container.
+  --dry-run          Print resolved options and exit before device lookup.
 USAGE
 }
 
@@ -101,6 +103,10 @@ while [ "$#" -gt 0 ]; do
 			SKIP_COPY=1
 			shift
 			;;
+		--dry-run)
+			DRY_RUN=1
+			shift
+			;;
 		--help|-h)
 			usage
 			exit 0
@@ -159,6 +165,27 @@ else
 	stage_variants=("$VARIANT")
 fi
 
+launch_environment="{\"MOEBIUS_DEMO_AUTORUN\":\"1\",\"MOEBIUS_DEMO_COMPARE\":\"$COMPARE\",\"MOEBIUS_DEMO_MODEL\":\"$MODEL\",\"MOEBIUS_DEMO_PRECISION\":\"$DEMO_PRECISION\",\"MOEBIUS_DEMO_STEPS\":\"$STEPS\"}"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+	printf 'device: %s\n' "$DEVICE_ID"
+	printf 'bundle_id: %s\n' "$BUNDLE_ID"
+	printf 'model: %s\n' "$MODEL"
+	printf 'precision: %s\n' "$PRECISION"
+	printf 'variant: %s\n' "$VARIANT"
+	printf 'compare: %s\n' "$COMPARE"
+	printf 'steps: %s\n' "$STEPS"
+	printf 'derived_data: %s\n' "$DERIVED_DATA"
+	printf 'stage_dir: %s\n' "$STAGE_DIR"
+	printf 'status_out: %s\n' "$STATUS_OUT"
+	printf 'stage_variants:\n'
+	for stage_variant in "${stage_variants[@]}"; do
+		printf '  %s\n' "$stage_variant"
+	done
+	printf 'launch_environment: %s\n' "$launch_environment"
+	exit 0
+fi
+
 device_line="$(xcrun devicectl list devices | awk -v id="$DEVICE_ID" '$0 ~ id { print; found=1 } END { if (!found) exit 1 }')" || {
 	printf 'Device not found: %s\n' "$DEVICE_ID" >&2
 	xcrun devicectl list devices >&2
@@ -214,7 +241,7 @@ fi
 xcrun devicectl device process launch \
 	--device "$DEVICE_ID" \
 	--terminate-existing \
-	--environment-variables "{\"MOEBIUS_DEMO_AUTORUN\":\"1\",\"MOEBIUS_DEMO_COMPARE\":\"$COMPARE\",\"MOEBIUS_DEMO_MODEL\":\"$MODEL\",\"MOEBIUS_DEMO_PRECISION\":\"$DEMO_PRECISION\",\"MOEBIUS_DEMO_STEPS\":\"$STEPS\"}" \
+	--environment-variables "$launch_environment" \
 	"$BUNDLE_ID"
 
 xcrun devicectl device copy from \
