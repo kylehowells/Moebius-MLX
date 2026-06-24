@@ -47,9 +47,15 @@ struct Inspect: ParsableCommand {
 			model.vaeEncoderWeights,
 			model.vaeDecoderWeights,
 		])
+		let totalTensorBytes: Int = dtypeUsage.reduce(0) { $0 + $1.bytes }
+		let totalTensorElements: Int = dtypeUsage.reduce(0) { $0 + $1.elements }
+		let bytesPerElement: Double = totalTensorElements == 0 ? 0 : Double(totalTensorBytes) / Double(totalTensorElements)
+		print("loaded tensor payload total mb: \(String(format: "%.2f", Double(totalTensorBytes) / 1_000_000))")
+		print("loaded tensor storage bytes per MLX element: \(String(format: "%.3f", bytesPerElement))")
 		print("loaded tensor payload by dtype:")
 		for usage in dtypeUsage {
-			print("  \(usage.dtype): elements=\(usage.elements) approx=\(String(format: "%.2f", usage.mb)) MB / \(String(format: "%.2f", usage.mib)) MiB")
+			let percent: Double = totalTensorBytes == 0 ? 0 : (Double(usage.bytes) / Double(totalTensorBytes)) * 100
+			print("  \(usage.dtype): elements=\(usage.elements) approx=\(String(format: "%.2f", usage.mb)) MB / \(String(format: "%.2f", usage.mib)) MiB (\(String(format: "%.1f", percent))%)")
 		}
 	}
 

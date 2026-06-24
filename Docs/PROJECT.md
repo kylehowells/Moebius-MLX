@@ -568,20 +568,29 @@ The intended acceptance ladder is:
 - f16 MLX vs ONNX/PyTorch: small numerical drift, but still very close
 - q8/q4/mxfp8/mxfp4 vs the same reference: measured quality/size tradeoff, not automatically acceptable just because it runs
 
-For the size target, the benchmark prints real artifact size from the loaded model directory. `moebius-mlx inspect` now prints the same manifest-selected deployment files plus loaded dtype payloads, so package-size questions can be answered from the Swift toolchain:
+For the size target, the benchmark prints real artifact size from the loaded model directory. `moebius-mlx inspect` now prints the same manifest-selected deployment files plus loaded dtype payloads and byte share, so package-size questions can be answered from the Swift toolchain:
 
 ```text
+swift run moebius-mlx inspect ft_places2-q8
+deployment mb: 600.23
+loaded tensor payload total mb: 600.05
+loaded tensor payload by dtype:
+  float16: approx=579.10 MB (96.5%)
+  uint32: approx=20.96 MB (3.5%)
+
 swift run moebius-mlx inspect ft_places2-q4
 deployment mb: 475.67
+loaded tensor payload total mb: 475.49
 loaded tensor payload by dtype:
-  float16: approx=425.34 MB
-  uint32: approx=50.16 MB
+  float16: approx=425.34 MB (89.5%)
+  uint32: approx=50.16 MB (10.5%)
 
 swift run moebius-mlx inspect ft_places2-q4-all-spatial-vae
 deployment mb: 200.50
+loaded tensor payload total mb: 200.28
 loaded tensor payload by dtype:
-  uint32: approx=145.89 MB
-  float16: approx=54.39 MB
+  uint32: approx=145.89 MB (72.8%)
+  float16: approx=54.39 MB (27.2%)
 ```
 
 This matters because the default q4 package still includes a large fp16 VAE and only quantizes selected UNet modules. Experimental VAE + broader UNet convolution packing now reaches about 200 MB, but the current 200 MB candidate has substantial latent drift. The benchmark is the gate for whether those reductions are acceptable.

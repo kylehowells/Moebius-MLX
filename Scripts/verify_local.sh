@@ -353,10 +353,24 @@ else
 	log "Inspecting representative variants"
 	swift run moebius-mlx inspect ft_places2-f32 >/dev/null
 	swift run moebius-mlx inspect ft_places2-f16 >/dev/null
+	swift run moebius-mlx inspect ft_places2-q8 >/dev/null
 	swift run moebius-mlx inspect ft_places2-q4 >/dev/null
 	swift run moebius-mlx inspect ft_places2-q4-all-spatial-vae >/dev/null
-	printf 'inspected ft_places2-f32, ft_places2-f16, ft_places2-q4, ft_places2-q4-all-spatial-vae\n'
+	printf 'inspected ft_places2-f32, ft_places2-f16, ft_places2-q8, ft_places2-q4, ft_places2-q4-all-spatial-vae\n'
 fi
+
+inspect_q8_output="$(swift run moebius-mlx inspect ft_places2-q8)"
+for expected in \
+	'loaded tensor payload total mb: 600.05' \
+	'loaded tensor storage bytes per MLX element: 2.036' \
+	'float16: elements=289547932 approx=579.10 MB / 552.27 MiB (96.5%)' \
+	'uint32: elements=5238784 approx=20.96 MB / 19.98 MiB (3.5%)'
+do
+	if ! printf '%s\n' "$inspect_q8_output" | grep -Fq "$expected"; then
+		printf 'inspect ft_places2-q8 output missing "%s"\n' "$expected" >&2
+		exit 1
+	fi
+done
 
 log "Running MLX smoke checks"
 swift run moebius-mlx verify-fixture ft_places2-f32

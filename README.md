@@ -126,9 +126,10 @@ Inspect a converted model:
 swift run moebius-mlx inspect ft_places2-f16
 ```
 
-`inspect` also prints the manifest-selected deployment files and loaded dtype payloads, which is the quickest way to understand whether a variant is genuinely compact or mostly f16:
+`inspect` also prints the manifest-selected deployment files, loaded dtype payloads, and dtype byte share, which is the quickest way to understand whether a variant is genuinely compact or mostly f16:
 
 ```bash
+swift run moebius-mlx inspect ft_places2-q8
 swift run moebius-mlx inspect ft_places2-q4
 swift run moebius-mlx inspect ft_places2-q4-all-spatial-vae
 ```
@@ -136,17 +137,26 @@ swift run moebius-mlx inspect ft_places2-q4-all-spatial-vae
 Current key outputs:
 
 ```text
+ft_places2-q8:
+deployment mb: 600.23
+loaded tensor payload total mb: 600.05
+loaded tensor payload by dtype:
+  float16: approx=579.10 MB (96.5%)
+  uint32: approx=20.96 MB (3.5%)
+
 ft_places2-q4:
 deployment mb: 475.67
+loaded tensor payload total mb: 475.49
 loaded tensor payload by dtype:
-  float16: approx=425.34 MB
-  uint32: approx=50.16 MB
+  float16: approx=425.34 MB (89.5%)
+  uint32: approx=50.16 MB (10.5%)
 
 ft_places2-q4-all-spatial-vae:
 deployment mb: 200.50
+loaded tensor payload total mb: 200.28
 loaded tensor payload by dtype:
-  uint32: approx=145.89 MB
-  float16: approx=54.39 MB
+  uint32: approx=145.89 MB (72.8%)
+  float16: approx=54.39 MB (27.2%)
 ```
 
 Run the zero-latent UNet fixture:

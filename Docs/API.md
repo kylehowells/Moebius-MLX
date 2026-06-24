@@ -106,7 +106,7 @@ Subcommands:
 
 | Command | Purpose |
 |---|---|
-| `inspect` | Load a converted model and print manifest, precision, file, and deployment-size details. |
+| `inspect` | Load a converted model and print manifest, precision, active deployment files, size, and dtype byte-share details. |
 | `export-quantized` | Materialize quantized UNet and optional quantized VAE files inside a model directory. |
 | `vae-smoke` | Run VAE encode/decode on a zero image tensor and print shapes. |
 | `u-net-smoke` | Run one CFG UNet prediction on zero latent inputs and print the output shape. |
