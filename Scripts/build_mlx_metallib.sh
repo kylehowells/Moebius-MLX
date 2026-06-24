@@ -17,6 +17,14 @@ if [[ "$CONFIG" != "release" && "$CONFIG" != "debug" ]]; then
   usage
   exit 2
 fi
+case "$CONFIG" in
+  debug)
+    CONFIG_CAP="Debug"
+    ;;
+  release)
+    CONFIG_CAP="Release"
+    ;;
+esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT/.build"
@@ -34,13 +42,19 @@ if [[ ! -d "$KERNELS_DIR" ]]; then
   exit 1
 fi
 
-mapfile -t OUT_DIRS < <(find "$BUILD_DIR" -maxdepth 3 -type d \( -path "*/$CONFIG" -o -path "*/${CONFIG^}" \) | LC_ALL=C sort)
+OUT_DIRS=()
+while IFS= read -r DIR; do
+  OUT_DIRS+=("$DIR")
+done < <(find "$BUILD_DIR" -maxdepth 3 -type d \( -path "*/$CONFIG" -o -path "*/$CONFIG_CAP" \) | LC_ALL=C sort)
 if [[ "${#OUT_DIRS[@]}" -eq 0 ]]; then
   echo "error: could not find SwiftPM output directory for config=$CONFIG" >&2
   exit 1
 fi
 
-mapfile -t METAL_SRCS < <(find "$KERNELS_DIR" -type f -name '*.metal' ! -name '*_nax.metal' | LC_ALL=C sort)
+METAL_SRCS=()
+while IFS= read -r SRC; do
+  METAL_SRCS+=("$SRC")
+done < <(find "$KERNELS_DIR" -type f -name '*.metal' ! -name '*_nax.metal' | LC_ALL=C sort)
 if [[ "${#METAL_SRCS[@]}" -eq 0 ]]; then
   echo "error: no .metal files found under $KERNELS_DIR" >&2
   exit 1
