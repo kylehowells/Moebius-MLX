@@ -763,6 +763,78 @@ The current q4-policy graph report is in:
 /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-onnx-steps20-q4-policies
 ```
 
+## Current Completion Audit
+
+As of 2026-06-24, the latest pushed repository checkpoint is:
+
+```text
+0965e44 Report memory in demo autorun
+```
+
+GitHub Actions passed for that commit:
+
+```text
+main CI 28105709116
+Swift package and repo checks: success
+```
+
+That CI run proves the source-only gate: Swift package dependency resolution, test-product build, MLX Metal library build, Swift tests, CLI help, shell/Python syntax checks, the device-autorun dry run, and checked-in documentation artifact checks. The broader local gate also passed on the same day with:
+
+```bash
+Scripts/verify_local.sh --demo-builds
+```
+
+That local run proves the external-model gate: converted artifact layout, candidate views, quantized UNet references, checked-in benchmark artifacts, Swift tests, representative model inspections, MLX smoke checks, image comparison/benchmark smoke checks, trimmed staging/load checks, Catalyst build, Catalyst autorun status checks, and the generic iOS Simulator build.
+
+Current requirement status:
+
+```text
+Converted MLX artifacts:          done for f32, f16, q8, q4, mxfp8, mxfp4
+Swift MLX library and CLI:        done and covered by Swift tests / local smoke checks
+Fidelity benchmark reports:       done for ONNX latent fixture and deterministic image benchmarks
+Performance benchmark reports:    done for latent/image benchmark paths and checked-in graph report
+UIKit Catalyst/iPadOS demo:       done for Catalyst and iOS build; iOS Simulator rejects MLX execution gracefully
+Model comparison UI:              done for families, precision variants, and ft_places2 size candidates
+Physical-device provisioning:     done for build, install, model copy, and manifest readback
+Physical-device model execution:  not yet proven
+Real-device timing/memory:        not yet proven
+Final completion status:          not complete until an available iPad completes autorun/manual model execution
+```
+
+The latest device availability check still reports the target iPad as unavailable:
+
+```text
+Kyle‘s iPad Pro  4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1  unavailable
+```
+
+The next completion command remains:
+
+```bash
+Scripts/run_device_autorun.sh --variant ft_places2-q4 --wait-seconds 300
+```
+
+For a full demo comparison run on device:
+
+```bash
+Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300
+```
+
+The autorun status file now includes the fields needed to complete the evidence chain:
+
+```text
+seconds=...
+model_mb=...
+memory_mb=...
+```
+
+Comparison runs include per-variant maps:
+
+```text
+model_mbs=...
+memory_mbs=...
+seconds=...
+```
+
 `Scripts/audit_model_size.py` gives a tensor-level size breakdown. For the current trimmed `ft_places2-q4` feed-forward pointwise deployment:
 
 ```text
