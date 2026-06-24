@@ -252,6 +252,13 @@ Scripts/verify_local.sh --all-inspects --demo-builds
 
 `--all-inspects` loads all 24 variants through the Swift CLI. `--demo-builds` also runs the Catalyst and generic iOS Simulator Xcode builds.
 
+Latest local verification on 2026-06-24:
+
+- `Scripts/verify_local.sh --all-inspects` passed.
+- All 24 standard converted variants loaded through `moebius-mlx inspect`: `pretrained`, `ft_places2`, `ft_celebahq`, and `ft_ffhq` across `f32`, `f16`, `q8`, `q4`, `mxfp8`, and `mxfp4`.
+- The same run passed Swift tests, f32 fixture smoke, f16/q4 image smoke, `compare-image ft_places2 --steps 2`, the f16-referenced q4 image benchmark, and trimmed staging/load checks for `ft_places2-q4` and `ft_places2-q4-all-spatial-vae`.
+- `Scripts/verify_local.sh --demo-builds` also passed on 2026-06-24, covering the Catalyst build, Catalyst autorun comparison paths, and generic iOS Simulator build.
+
 The iPad staging helper was smoke-tested with one quantized variant and produced:
 
 ```text
