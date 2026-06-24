@@ -436,10 +436,10 @@ if [ "$RUN_DEMO_BUILDS" -eq 1 ]; then
 	require_dir "$catalyst_app"
 
 	log "Running Catalyst autorun size checks"
-	run_catalyst_autorun "$catalyst_app" f16 f16 "ft_places2-f16" "model_mb=619.89"
-	run_catalyst_autorun "$catalyst_app" q4 q4 "ft_places2-q4" "model_mb=475.67"
-	run_catalyst_autorun "$catalyst_app" ft_places2-q4-all-spatial-vae q4-200 "ft_places2-q4-all-spatial-vae" "model_mb=200.50"
-	run_catalyst_autorun "$catalyst_app" f16 compare "done comparison 8/8" "ft_places2-q4-all-spatial-vae:200.50"
+	run_catalyst_autorun "$catalyst_app" f16 f16 "ft_places2-f16" "seconds=" "model_mb=619.89" "memory_mb="
+	run_catalyst_autorun "$catalyst_app" q4 q4 "ft_places2-q4" "seconds=" "model_mb=475.67" "memory_mb="
+	run_catalyst_autorun "$catalyst_app" ft_places2-q4-all-spatial-vae q4-200 "ft_places2-q4-all-spatial-vae" "seconds=" "model_mb=200.50" "memory_mb="
+	run_catalyst_autorun "$catalyst_app" f16 compare "done comparison 8/8" "ft_places2-q4-all-spatial-vae:200.50" "memory_mbs=" "seconds="
 
 	log "Building demo for iOS Simulator"
 	xcodebuild \

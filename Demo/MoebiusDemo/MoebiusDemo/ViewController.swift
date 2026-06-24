@@ -1,4 +1,5 @@
 import MoebiusMLX
+import Darwin
 import UIKit
 import UniformTypeIdentifiers
 
@@ -171,7 +172,8 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 					status: "Unsupported on simulator",
 					duration: 0,
 					mean: nil,
-					modelMB: nil
+					modelMB: nil,
+					memoryMB: nil
 				))
 			}
 			self.finishRun(status: isComparisonRun ? "Comparison unavailable on iOS Simulator" : "\(firstVariant): iOS Simulator cannot run MLX models")
@@ -219,6 +221,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 					})
 					let stats: DemoFixture.Stats = DemoFixture.stats(values: result)
 					let duration: TimeInterval = Date().timeIntervalSince(startDate)
+					let memoryMB: Double? = DemoAutorun.residentMemoryMB()
 					latestImage = DemoFixture.makeImage(rgb01: result)
 					let record: DemoRunRecord = DemoRunRecord(
 						variant: variant,
@@ -226,23 +229,26 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 						status: "Done",
 						duration: duration,
 						mean: stats.mean,
-						modelMB: modelMB
+						modelMB: modelMB,
+						memoryMB: memoryMB
 					)
 					completedRecords.append(record)
 					DispatchQueue.main.async {
 						self?.addRunRecord(record)
 					}
-					DemoAutorun.write(status: "done \(variant) steps=\(stepCount) model_mb=\(DemoAutorun.formatMB(modelMB)) min=\(stats.min) max=\(stats.max) mean=\(stats.mean)")
+					DemoAutorun.write(status: "done \(variant) steps=\(stepCount) seconds=\(DemoAutorun.formatSeconds(duration)) model_mb=\(DemoAutorun.formatMB(modelMB)) memory_mb=\(DemoAutorun.formatMB(memoryMB)) min=\(stats.min) max=\(stats.max) mean=\(stats.mean)")
 				}
 				catch {
 					let duration: TimeInterval = Date().timeIntervalSince(startDate)
+					let memoryMB: Double? = DemoAutorun.residentMemoryMB()
 					let record: DemoRunRecord = DemoRunRecord(
 						variant: variant,
 						steps: stepCount,
 						status: "Error",
 						duration: duration,
 						mean: nil,
-						modelMB: modelMB
+						modelMB: modelMB,
+						memoryMB: memoryMB
 					)
 					failedRecords.append(record)
 					DispatchQueue.main.async {
@@ -263,7 +269,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 				}
 				if isComparisonRun {
 					self?.finishRun(status: "Compared \(completedRecords.count)/\(variants.count) variants")
-					DemoAutorun.write(status: "done comparison \(completedRecords.count)/\(variants.count) variants errors=\(failedRecords.count) model_mbs=\(DemoAutorun.formatModelMBs(completedRecords))")
+					DemoAutorun.write(status: "done comparison \(completedRecords.count)/\(variants.count) variants errors=\(failedRecords.count) model_mbs=\(DemoAutorun.formatModelMBs(completedRecords)) memory_mbs=\(DemoAutorun.formatMemoryMBs(completedRecords)) seconds=\(DemoAutorun.formatDurations(completedRecords))")
 				}
 				else if let record: DemoRunRecord = completedRecords.last, let mean: Float = record.mean {
 					self?.finishRun(status: "\(record.variant): done mean \(String(format: "%.4f", mean))")
@@ -343,6 +349,7 @@ struct DemoRunRecord {
 	let duration: TimeInterval
 	let mean: Float?
 	let modelMB: Double?
+	let memoryMB: Double?
 }
 
 struct DemoVariantOption {
@@ -672,13 +679,14 @@ final class DemoHistoryRowView: UIView {
 		self.variantLabel.text = record.variant
 		let meanText: String = record.mean.map { String(format: " mean %.4f", $0) } ?? ""
 		let sizeText: String = record.modelMB.map { String(format: "  %.0f MB", $0) } ?? ""
-		self.detailLabel.text = "\(record.status)  \(record.steps) steps  \(String(format: "%.1fs", record.duration))\(meanText)\(sizeText)"
+		let memoryText: String = record.memoryMB.map { String(format: "  %.0f MB RSS", $0) } ?? ""
+		self.detailLabel.text = "\(record.status)  \(record.steps) steps  \(String(format: "%.1fs", record.duration))\(meanText)\(sizeText)\(memoryText)"
 	}
 
 	override func layoutSubviews() {
 		super.layoutSubviews()
 		let spacing: CGFloat = 8
-		let detailWidth: CGFloat = min(300, self.bounds.width * 0.55)
+		let detailWidth: CGFloat = min(390, self.bounds.width * 0.65)
 		self.detailLabel.frame = CGRect(
 			x: self.bounds.width - detailWidth,
 			y: 0,
@@ -890,10 +898,42 @@ enum DemoAutorun {
 		return String(format: "%.2f", value)
 	}
 
+	static func formatSeconds(_ value: TimeInterval) -> String {
+		return String(format: "%.3f", value)
+	}
+
 	static func formatModelMBs(_ records: [DemoRunRecord]) -> String {
 		return records.map { record in
 			return "\(record.variant):\(self.formatMB(record.modelMB))"
 		}
 		.joined(separator: ",")
+	}
+
+	static func formatMemoryMBs(_ records: [DemoRunRecord]) -> String {
+		return records.map { record in
+			return "\(record.variant):\(self.formatMB(record.memoryMB))"
+		}
+		.joined(separator: ",")
+	}
+
+	static func formatDurations(_ records: [DemoRunRecord]) -> String {
+		return records.map { record in
+			return "\(record.variant):\(self.formatSeconds(record.duration))"
+		}
+		.joined(separator: ",")
+	}
+
+	static func residentMemoryMB() -> Double? {
+		var info: mach_task_basic_info = mach_task_basic_info()
+		var count: mach_msg_type_number_t = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+		let result: kern_return_t = withUnsafeMutablePointer(to: &info) { infoPointer in
+			return infoPointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+				return task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), reboundPointer, &count)
+			}
+		}
+		guard result == KERN_SUCCESS else {
+			return nil
+		}
+		return Double(info.resident_size) / 1_000_000
 	}
 }

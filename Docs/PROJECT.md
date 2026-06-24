@@ -193,7 +193,7 @@ It is a UIKit app with:
 - a stepper for 2-24 denoising steps
 - synthetic sample image, imported-image support, mask preview, and output preview
 - Load image and Reset sample controls
-- a run-history comparison panel showing recent variants, status, step count, runtime, output mean, and manifest-selected deployment MB
+- a run-history comparison panel showing recent variants, status, step count, runtime, output mean, manifest-selected deployment MB, and observed resident memory MB
 - a run button that calls the same `MoebiusPipeline.runImageRGBFloats` API as the CLI image smoke path
 - a Compare quants button that runs f32, f16, q8, q4, mxfp8, and mxfp4 for the selected model family on the same sample
 - additional `ft_places2` precision options for the experimental `q4 322M` and `q4 200M` candidates, so that family compares eight visible variants
@@ -207,7 +207,7 @@ It is a UIKit app with:
   - `MOEBIUS_DEMO_STEPS=2`
   - `MOEBIUS_DEMO_AUTORUN_STATUS=/tmp/moebius-demo-autorun-status.txt`
 
-If `MOEBIUS_DEMO_AUTORUN=1` is set and `MOEBIUS_DEMO_AUTORUN_STATUS` is not set, the app writes the latest autorun status to `Documents/moebius-demo-autorun-status.txt` and also prints the status. This makes physical-device runs observable through `devicectl` app-container file copy.
+If `MOEBIUS_DEMO_AUTORUN=1` is set and `MOEBIUS_DEMO_AUTORUN_STATUS` is not set, the app writes the latest autorun status to `Documents/moebius-demo-autorun-status.txt` and also prints the status. This makes physical-device runs observable through `devicectl` app-container file copy. Completed single-variant status lines include `seconds=`, `model_mb=`, and `memory_mb=`. Completed comparison status lines include per-variant `model_mbs=`, `memory_mbs=`, and `seconds=` maps.
 
 The app builds for both Mac Catalyst and iOS Simulator. Catalyst is currently the easiest local test target.
 
@@ -412,25 +412,25 @@ The generic iOS Simulator build was re-run after adding the `ft_places2` candida
 The Catalyst app was launched with autorun enabled through the real `ViewController` path:
 
 ```text
-done ft_places2-f16 steps=2 model_mb=619.89 min=0.0 max=1.0 mean=0.50244683
+done ft_places2-f16 steps=2 seconds=... model_mb=619.89 memory_mb=... min=0.0 max=1.0 mean=...
 ```
 
 The Catalyst app was also launched through the same autorun path using the current feed-forward pointwise `ft_places2-q4` artifact:
 
 ```text
-done ft_places2-q4 steps=2 model_mb=475.67 min=0.0 max=1.0 mean=0.5024325
+done ft_places2-q4 steps=2 seconds=... model_mb=475.67 memory_mb=... min=0.0 max=1.0 mean=...
 ```
 
 The Catalyst comparison autorun path was also launched through the real `ViewController` path. It now covers the six standard precision variants plus the two visible `ft_places2` q4 package-size candidates:
 
 ```text
-done comparison 8/8 variants errors=0 model_mbs=ft_places2-f32:1239.58,ft_places2-f16:619.89,ft_places2-q8:600.23,ft_places2-q4:475.67,ft_places2-mxfp8:599.56,ft_places2-mxfp4:589.09,ft_places2-q4-ff-spatial-vae:322.50,ft_places2-q4-all-spatial-vae:200.50
+done comparison 8/8 variants errors=0 model_mbs=... memory_mbs=... seconds=...
 ```
 
 The current candidate selector path was then launched through the same Catalyst autorun mechanism using `MOEBIUS_DEMO_PRECISION=ft_places2-q4-all-spatial-vae`:
 
 ```text
-done ft_places2-q4-all-spatial-vae steps=2 model_mb=200.50 min=0.0 max=1.0 mean=0.5017574
+done ft_places2-q4-all-spatial-vae steps=2 seconds=... model_mb=200.50 memory_mb=... min=0.0 max=1.0 mean=...
 ```
 
 The iPad Simulator app was also built and launched with the corrected bundle id, `com.ikyle.MoebiusDemo`. The runtime UI snapshot showed the programmatic `SceneDelegate` root controller with:
@@ -795,5 +795,5 @@ The current q4/mxfp4 variants are therefore not full-model q4 packages. The orig
 - The repo includes a generated ONNX-backed benchmark report under `Docs/BenchmarkReports`, and the external fixture/report cache is under `/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks`. Regenerating those references on a fresh machine still requires the Python reference dependencies, including `onnxruntime` and/or `diffusers`.
 - Quantized variants materialize compact quantized UNet parameters. By default only supported `Linear` and `Embedding` modules are quantized. `ft_places2-q4` has additionally been re-exported with feed-forward 1x1 UNet convolutions packed, and experimental non-default artifacts also pack eligible spatial sampler 3x3 convolutions and VAE conv/linear weights; remaining 1x1 attention/resnet, depthwise, and relative-position weights are still mostly f16.
 - Catalyst demo generation has been verified through the actual view-controller autorun path. iPad Simulator UI launch is verified, but MLX Swift currently aborts during Metal stream/device initialization on iOS Simulator. The library and demo now fail gracefully there.
-- Physical iPad build, install, and model-container copy are verified. Real-device model execution and timing/memory validation still need one available unlocked-device autorun/manual run; the latest 2026-06-24 `devicectl list devices` check reported the iPad as unavailable.
+- Physical iPad build, install, and model-container copy are verified. Real-device model execution and timing/memory validation still need one available unlocked-device autorun/manual run; the latest 2026-06-24 `devicectl list devices` check reported the iPad as unavailable. The demo autorun status now records timing and resident memory fields so that run can be captured from the app container status file.
 - The demo can import source images from Files, but mask editing/import is not implemented. It currently uses a fixed circular mask for both synthetic and imported samples.

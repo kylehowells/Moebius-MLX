@@ -161,6 +161,8 @@ MOEBIUS_DEMO_STEPS=2
 MOEBIUS_DEMO_AUTORUN_STATUS=/tmp/moebius-demo-status.txt
 ```
 
+Single-variant autorun status lines include `seconds=`, `model_mb=`, `memory_mb=`, and image min/max/mean. Comparison status lines include per-variant `model_mbs=`, `memory_mbs=`, and `seconds=` maps. The physical-device helper copies the same status file back from the app container.
+
 Physical-device staging uses:
 
 ```bash

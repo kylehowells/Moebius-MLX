@@ -262,7 +262,7 @@ xcodebuild -project Demo/MoebiusDemo/MoebiusDemo.xcodeproj \
   build
 ```
 
-In the demo, `ft_places2` exposes the standard `f32`, `f16`, `q8`, `q4`, `mxfp8`, and `mxfp4` options plus `q4 322M` and `q4 200M` candidate options. The Compare button runs every visible option for the selected model family, so selecting `ft_places2` compares the standard variants and both package-size candidates. Recent-run rows show status, steps, runtime, output mean, and manifest-selected deployment MB for each completed variant.
+In the demo, `ft_places2` exposes the standard `f32`, `f16`, `q8`, `q4`, `mxfp8`, and `mxfp4` options plus `q4 322M` and `q4 200M` candidate options. The Compare button runs every visible option for the selected model family, so selecting `ft_places2` compares the standard variants and both package-size candidates. Recent-run rows show status, steps, runtime, output mean, manifest-selected deployment MB, and observed resident memory MB for each completed variant.
 
 Build the demo app for iOS Simulator:
 
@@ -302,7 +302,7 @@ xcrun devicectl device copy to \
   --domain-identifier com.ikyle.MoebiusDemo
 ```
 
-When launched with `MOEBIUS_DEMO_AUTORUN=1`, the demo writes its latest status to `Documents/moebius-demo-autorun-status.txt` unless `MOEBIUS_DEMO_AUTORUN_STATUS` points to a different path.
+When launched with `MOEBIUS_DEMO_AUTORUN=1`, the demo writes its latest status to `Documents/moebius-demo-autorun-status.txt` unless `MOEBIUS_DEMO_AUTORUN_STATUS` points to a different path. Completed single-variant status lines include `seconds=`, `model_mb=`, and `memory_mb=`. Completed comparison status lines include `model_mbs=`, `memory_mbs=`, and per-variant `seconds=` maps, so a physical-device autorun can capture timing and memory evidence through one status readback.
 
 The repeatable physical-device autorun helper wraps build, install, staging, model copy, launch, and status readback:
 
@@ -360,14 +360,13 @@ Passed locally:
 - `devicectl` copied staged `ft_places2-q4` into the app Documents container; readback confirmed `Documents/ft_places2-q4/manifest.json`
 - latest physical-device check on 2026-06-24 could not continue because `xcrun devicectl list devices` reported Kyle's iPad Pro (`4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1`) as `unavailable`; the current feed-forward q4 package is staged at `/tmp/moebius-ipad-feedforward-stage/Moebius-MLX/ft_places2-q4` and is about `454M`
 - `Scripts/run_device_autorun.sh --variant ft_places2-q4-all-spatial-vae --skip-build --skip-install --skip-copy` was tested against the current unavailable CoreDevice state and correctly exits before build/install with the device status
-- Catalyst demo autorun through `ViewController` completed `ft_places2-f16` with two steps and wrote:
-  `done ft_places2-f16 steps=2 model_mb=619.89 min=0.0 max=1.0 mean=0.50244683`
+- Catalyst demo autorun through `ViewController` completed `ft_places2-f16` with two steps and wrote a status containing `seconds=`, `model_mb=619.89`, `memory_mb=`, and bounded image stats
 - Catalyst demo autorun through `ViewController` completed the current feed-forward pointwise `ft_places2-q4` artifact with two steps and wrote:
-  `done ft_places2-q4 steps=2 model_mb=475.67 min=0.0 max=1.0 mean=0.5024325`
+  `done ft_places2-q4 steps=2 seconds=... model_mb=475.67 memory_mb=... min=0.0 max=1.0 mean=...`
 - Catalyst demo compare autorun through `ViewController` completed all eight visible `ft_places2` precision/candidate variants with two steps and wrote:
-  `done comparison 8/8 variants errors=0 model_mbs=ft_places2-f32:1239.58,ft_places2-f16:619.89,ft_places2-q8:600.23,ft_places2-q4:475.67,ft_places2-mxfp8:599.56,ft_places2-mxfp4:589.09,ft_places2-q4-ff-spatial-vae:322.50,ft_places2-q4-all-spatial-vae:200.50`
+  `done comparison 8/8 variants errors=0 model_mbs=... memory_mbs=... seconds=...`
 - Catalyst demo autorun through `ViewController` completed the `q4 200M` candidate selector path with two steps and wrote:
-  `done ft_places2-q4-all-spatial-vae steps=2 model_mb=200.50 min=0.0 max=1.0 mean=0.5017574`
+  `done ft_places2-q4-all-spatial-vae steps=2 seconds=... model_mb=200.50 memory_mb=... min=0.0 max=1.0 mean=...`
 - `moebius-mlx benchmark-fixture` consumes deterministic PyTorch/ONNX latent fixtures and reports fidelity metrics plus total model size. The command has been smoke-tested with a synthetic fixture and used for the checked-in ONNX-backed report. Regenerating references from scratch requires the Python reference dependencies listed above.
 - `Scripts/run_benchmark_report.sh --fixture /tmp/moebius-empty-fixture --reference synthetic-zero --steps 2 --output-dir /tmp/moebius-benchmark-report-smoke` produced all five graph PNGs plus `benchmark.tsv` and `summary.md`. This validates the report pipeline, not real ONNX/PyTorch parity.
 - Real ONNX-backed 20-step `ft_places2` fixture:
@@ -563,4 +562,4 @@ The experimental quantized VAE files reduce the measured deployment payload to 3
 - The repo includes a generated ONNX-backed benchmark report under `Docs/BenchmarkReports`, and the external fixture/report cache is under `/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks`. Regenerating those references on a fresh machine still requires the Python reference dependencies, including `onnxruntime` and/or `diffusers`.
 - The demo can import a source image from Files, but mask editing/import is not implemented yet; it currently uses a fixed circular mask for both synthetic and imported samples.
 - Catalyst demo generation is verified through the autorun controller path. iPad Simulator UI launch is verified, but MLX Swift aborts while initializing its Metal stream/device on iOS Simulator, so the library and demo now reject simulator model execution before touching MLX.
-- Physical iPad build, install, and model-container copy have been verified. The real-device autorun launch still needs an available/unlocked iPad; the latest 2026-06-24 `devicectl list devices` check reported the iPad as `unavailable`.
+- Physical iPad build, install, and model-container copy have been verified. The real-device autorun launch still needs an available/unlocked iPad; the latest 2026-06-24 `devicectl list devices` check reported the iPad as `unavailable`. The autorun status path now records timing and resident memory fields needed for that final device validation.
