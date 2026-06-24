@@ -214,6 +214,16 @@ Audit model size composition:
   --deployment
 ```
 
+Compare several runtime payloads in one compact table:
+
+```bash
+./.venv/bin/python Scripts/audit_model_size.py --deployment \
+  /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX/ft_places2-f16 \
+  /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX/ft_places2-q8 \
+  /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX/ft_places2-q4 \
+  /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX/ft_places2-q4-all-spatial-vae
+```
+
 For physical iPad staging, quantized packages are trimmed by default:
 
 ```bash

@@ -74,10 +74,13 @@ METAL_FLAGS=(
 
 echo "Compiling ${#METAL_SRCS[@]} Metal sources..."
 AIR_FILES=()
+INDEX=0
 for SRC in "${METAL_SRCS[@]}"; do
+  INDEX=$((INDEX + 1))
   REL="${SRC#"$KERNELS_DIR/"}"
   KEY="$(printf '%s' "$REL" | shasum -a 256 | awk '{print $1}' | cut -c1-16)"
   OUT_AIR="$TMP/$KEY.air"
+  echo "[$INDEX/${#METAL_SRCS[@]}] metal $REL"
 
   if ! xcrun -sdk macosx metal "${METAL_FLAGS[@]}" -c "$SRC" -I"$KERNELS_DIR" -I"$MLX_SWIFT_DIR/Source/Cmlx/mlx" -o "$OUT_AIR" 2>"$TMP/metal.err"; then
     if grep -q "missing Metal Toolchain" "$TMP/metal.err" 2>/dev/null; then
