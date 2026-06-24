@@ -15,14 +15,15 @@ SKIP_BUILD=0
 SKIP_INSTALL=0
 SKIP_COPY=0
 VARIANT_WAS_EXPLICIT=0
+COMPARE=0
 
 usage() {
 	cat <<USAGE
 Usage: Scripts/run_device_autorun.sh [options]
 
-Builds the UIKit demo for a physical iPad, installs it, stages one model
-variant, copies that staged model into the app Documents container, launches the
-app with MOEBIUS_DEMO_AUTORUN=1, and reads back the autorun status file.
+Builds the UIKit demo for a physical iPad, installs it, stages model variants,
+copies the staged Moebius-MLX folder into the app Documents container, launches
+the app with MOEBIUS_DEMO_AUTORUN=1, and reads back the autorun status file.
 
 Options:
   --device ID        CoreDevice id. Default: $DEVICE_ID
@@ -31,6 +32,8 @@ Options:
                     Overrides --model/--precision when supplied.
   --model NAME       Model family. Default: $MODEL
   --precision NAME   Precision/candidate suffix. Default: $PRECISION
+  --compare          Run the demo comparison path. Stages all visible variants
+                    for --model, including ft_places2 q4 size candidates.
   --steps N          Denoising steps. Default: $STEPS
   --derived-data DIR DerivedData path. Default: $DERIVED_DATA
   --stage-dir DIR    Temporary staging path. Default: $STAGE_DIR
@@ -65,6 +68,10 @@ while [ "$#" -gt 0 ]; do
 			PRECISION="$2"
 			VARIANT="${MODEL}-${PRECISION}"
 			shift 2
+			;;
+		--compare)
+			COMPARE=1
+			shift
 			;;
 		--steps)
 			STEPS="$2"
@@ -139,6 +146,19 @@ case "$PRECISION" in
 	;;
 esac
 
+stage_variants=()
+if [ "$COMPARE" -eq 1 ]; then
+	for precision in f32 f16 q8 q4 mxfp8 mxfp4; do
+		stage_variants+=("$MODEL-$precision")
+	done
+	if [ "$MODEL" = "ft_places2" ]; then
+		stage_variants+=("ft_places2-q4-ff-spatial-vae")
+		stage_variants+=("ft_places2-q4-all-spatial-vae")
+	fi
+else
+	stage_variants=("$VARIANT")
+fi
+
 device_line="$(xcrun devicectl list devices | awk -v id="$DEVICE_ID" '$0 ~ id { print; found=1 } END { if (!found) exit 1 }')" || {
 	printf 'Device not found: %s\n' "$DEVICE_ID" >&2
 	xcrun devicectl list devices >&2
@@ -181,7 +201,7 @@ fi
 if [ "$SKIP_COPY" -eq 0 ]; then
 	"$ROOT_DIR/Scripts/stage_models_for_ios.sh" \
 		--output "$STAGE_DIR" \
-		"$VARIANT"
+		"${stage_variants[@]}"
 	xcrun devicectl device copy to \
 		--device "$DEVICE_ID" \
 		--source "$STAGE_DIR/Moebius-MLX" \
@@ -194,7 +214,7 @@ fi
 xcrun devicectl device process launch \
 	--device "$DEVICE_ID" \
 	--terminate-existing \
-	--environment-variables "{\"MOEBIUS_DEMO_AUTORUN\":\"1\",\"MOEBIUS_DEMO_MODEL\":\"$MODEL\",\"MOEBIUS_DEMO_PRECISION\":\"$DEMO_PRECISION\",\"MOEBIUS_DEMO_STEPS\":\"$STEPS\"}" \
+	--environment-variables "{\"MOEBIUS_DEMO_AUTORUN\":\"1\",\"MOEBIUS_DEMO_COMPARE\":\"$COMPARE\",\"MOEBIUS_DEMO_MODEL\":\"$MODEL\",\"MOEBIUS_DEMO_PRECISION\":\"$DEMO_PRECISION\",\"MOEBIUS_DEMO_STEPS\":\"$STEPS\"}" \
 	"$BUNDLE_ID"
 
 xcrun devicectl device copy from \

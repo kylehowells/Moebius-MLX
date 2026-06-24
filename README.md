@@ -299,9 +299,10 @@ The repeatable physical-device autorun helper wraps build, install, staging, mod
 ```bash
 Scripts/run_device_autorun.sh --variant ft_places2-q4
 Scripts/run_device_autorun.sh --variant ft_places2-q4-all-spatial-vae
+Scripts/run_device_autorun.sh --model ft_places2 --compare
 ```
 
-It defaults to Kyle's iPad Pro CoreDevice id and exits before build/install if `devicectl` reports the device as unavailable.
+It defaults to Kyle's iPad Pro CoreDevice id and exits before build/install if `devicectl` reports the device as unavailable. In compare mode, it stages the six standard visible precisions for the selected model; for `ft_places2`, it also stages the `q4 322M` and `q4 200M` candidate packages shown in the demo.
 
 ## Library Usage
 

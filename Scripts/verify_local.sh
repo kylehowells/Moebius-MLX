@@ -301,6 +301,10 @@ bash -n \
 	Scripts/benchmark_image.sh \
 	Scripts/run_image_benchmark_report.sh \
 	Scripts/run_device_autorun.sh
+if ! Scripts/run_device_autorun.sh --help | grep -q -- '--compare'; then
+	printf 'run_device_autorun.sh help should document --compare\n' >&2
+	exit 1
+fi
 
 log "Running Swift tests"
 swift test

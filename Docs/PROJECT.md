@@ -340,7 +340,10 @@ The helper wraps the known-good manual sequence: device build, app install, mode
 
 ```bash
 Scripts/run_device_autorun.sh --variant ft_places2-q4-all-spatial-vae
+Scripts/run_device_autorun.sh --model ft_places2 --compare
 ```
+
+`--compare` stages every visible precision for the selected model. For `ft_places2`, it stages the six standard precision variants plus the `q4 322M` and `q4 200M` package-size candidates, matching the demo comparison UI.
 
 The latest successful provisioning attempt copied the original staged q4 package to the iPad app container and read the manifest back. A later 2026-06-24 continuation check could not launch the app because CoreDevice reported the iPad as unavailable:
 
