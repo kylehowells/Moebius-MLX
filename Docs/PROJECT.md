@@ -198,11 +198,12 @@ It is a UIKit app with:
 - programmatic `SceneDelegate`
 - no main storyboard
 - a Launch Screen storyboard only
-- segmented controls for model family and precision
+- a model-selection `UIMenu` covering model family and precision variants
 - a stepper for 2-24 denoising steps
+- a two-image primary workspace: source/mask editor and generated result
 - synthetic sample image, imported-image support, editable mask overlay, and output preview
-- Load image, Use sample, and Clear mask controls
-- labeled sections for model fine-tune, precision/quant choice, generation settings, mask tools, and image/run actions
+- Load image and Generate controls in the main toolbar, with Use sample, Clear mask, and Compare quants in the inspector
+- a right-side inspector for model choice, generation settings, mask tools, and utility actions; on narrow devices it opens as a slide-over behind an Options button
 - paint/erase mask editing directly over the source image, with a brush-size slider
 - generation controls for steps, guidance, seed, and paste-back
 - a run-history comparison panel showing recent variants, status, step count, runtime, output mean, manifest-selected deployment MB, and observed resident memory MB

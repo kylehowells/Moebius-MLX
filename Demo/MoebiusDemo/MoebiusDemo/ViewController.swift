@@ -23,6 +23,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 	private var guidanceScale: Float = 2
 	private var seed: UInt64 = 7
 	private var pasteBack: Bool = true
+	private var showsInspector: Bool = false
 	private var isRunning: Bool = false
 	private var didAutorun: Bool = false
 	private var runRecords: [DemoRunRecord] = []
@@ -40,21 +41,14 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 		super.viewDidLoad()
 		self.applyEnvironmentDefaults()
 
-		for (index, modelName) in self.modelNames.enumerated() {
-			self._view.modelControl.insertSegment(withTitle: modelName, at: index, animated: false)
-		}
-		self._view.modelControl.selectedSegmentIndex = self.selectedModelIndex
-
-		self.reloadPrecisionControl()
-
-		self._view.modelControl.addTarget(self, action: #selector(self.modelChanged), for: .valueChanged)
-		self._view.precisionControl.addTarget(self, action: #selector(self.precisionChanged), for: .valueChanged)
+		self.reloadModelMenu()
 		self._view.stepper.addTarget(self, action: #selector(self.stepperChanged), for: .valueChanged)
 		self._view.guidanceSlider.addTarget(self, action: #selector(self.guidanceChanged), for: .valueChanged)
 		self._view.seedStepper.addTarget(self, action: #selector(self.seedChanged), for: .valueChanged)
 		self._view.brushSlider.addTarget(self, action: #selector(self.brushChanged), for: .valueChanged)
 		self._view.paintModeControl.addTarget(self, action: #selector(self.paintModeChanged), for: .valueChanged)
 		self._view.pasteBackSwitch.addTarget(self, action: #selector(self.pasteBackChanged), for: .valueChanged)
+		self._view.settingsButton.addTarget(self, action: #selector(self.settingsTapped), for: .touchUpInside)
 		self._view.loadImageButton.addTarget(self, action: #selector(self.loadImageTapped), for: .touchUpInside)
 		self._view.resetSampleButton.addTarget(self, action: #selector(self.resetSampleTapped), for: .touchUpInside)
 		self._view.clearMaskButton.addTarget(self, action: #selector(self.clearMaskTapped), for: .touchUpInside)
@@ -105,18 +99,6 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 		}
 	}
 
-	@objc private func modelChanged() {
-		self.selectedModelIndex = self._view.modelControl.selectedSegmentIndex
-		self.selectedPrecisionIndex = min(self.selectedPrecisionIndex, self.precisionOptions().count - 1)
-		self.reloadPrecisionControl()
-		self.updateSelectedModelAvailabilityStatus(prefix: "Selected")
-	}
-
-	@objc private func precisionChanged() {
-		self.selectedPrecisionIndex = self._view.precisionControl.selectedSegmentIndex
-		self.updateSelectedModelAvailabilityStatus(prefix: "Selected")
-	}
-
 	@objc private func stepperChanged() {
 		self.stepCount = Int(self._view.stepper.value.rounded())
 		self.updateStepLabel()
@@ -143,6 +125,11 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 
 	@objc private func pasteBackChanged() {
 		self.pasteBack = self._view.pasteBackSwitch.isOn
+	}
+
+	@objc private func settingsTapped() {
+		self.showsInspector.toggle()
+		self._view.isInspectorOpen = self.showsInspector
 	}
 
 	@objc private func runTapped() {
@@ -210,14 +197,39 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 		return self.standardPrecisionOptions
 	}
 
-	private func reloadPrecisionControl() {
-		self._view.precisionControl.removeAllSegments()
-		let options: [DemoVariantOption] = self.precisionOptions()
-		self.selectedPrecisionIndex = min(self.selectedPrecisionIndex, options.count - 1)
-		for (index, option) in options.enumerated() {
-			self._view.precisionControl.insertSegment(withTitle: option.title, at: index, animated: false)
+	private func reloadModelMenu() {
+		let currentOptions: [DemoVariantOption] = self.precisionOptions()
+		if self.selectedPrecisionIndex >= currentOptions.count {
+			self.selectedPrecisionIndex = max(0, currentOptions.count - 1)
 		}
-		self._view.precisionControl.selectedSegmentIndex = self.selectedPrecisionIndex
+
+		var modelMenus: [UIMenu] = []
+		for (modelIndex, modelName) in self.modelNames.enumerated() {
+			let options: [DemoVariantOption]
+			if modelName == "ft_places2" {
+				options = self.standardPrecisionOptions + self.candidatePrecisionOptions
+			}
+			else {
+				options = self.standardPrecisionOptions
+			}
+			let actions: [UIAction] = options.enumerated().map { precisionIndex, option in
+				let variant: String = option.resolvedVariant(modelName: modelName)
+				let state: UIMenuElement.State = (modelIndex == self.selectedModelIndex && precisionIndex == self.selectedPrecisionIndex) ? .on : .off
+				return UIAction(title: variant, state: state, handler: { [weak self] _ in
+					guard let self else { return }
+					self.selectedModelIndex = modelIndex
+					self.selectedPrecisionIndex = precisionIndex
+					self.reloadModelMenu()
+					self.updateSelectedModelAvailabilityStatus(prefix: "Selected")
+				})
+			}
+			modelMenus.append(UIMenu(title: modelName, options: .displayInline, children: actions))
+		}
+
+		let variant: String = self.precisionOptions()[self.selectedPrecisionIndex].resolvedVariant(modelName: self.modelNames[self.selectedModelIndex])
+		self._view.modelButton.menu = UIMenu(title: "Model", children: modelMenus)
+		self._view.modelButton.showsMenuAsPrimaryAction = true
+		self._view.modelButton.setTitle(variant, for: .normal)
 	}
 
 	private func prepareModelsThenRun(variants: [String], resultMode: DemoRunMode) {
@@ -481,8 +493,8 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate {
 		self._view.resetSampleButton.isEnabled = isEnabled
 		self._view.runButton.isEnabled = isEnabled
 		self._view.compareButton.isEnabled = isEnabled
-		self._view.modelControl.isEnabled = isEnabled
-		self._view.precisionControl.isEnabled = isEnabled
+		self._view.modelButton.isEnabled = isEnabled
+		self._view.settingsButton.isEnabled = isEnabled
 		self._view.stepper.isEnabled = isEnabled
 		self._view.guidanceSlider.isEnabled = isEnabled
 		self._view.seedStepper.isEnabled = isEnabled
@@ -806,6 +818,15 @@ enum DemoModelLocator {
 }
 
 final class DemoView: UIView {
+	var isInspectorOpen: Bool = false {
+		didSet {
+			self.setNeedsLayout()
+			UIView.animate(withDuration: 0.22) {
+				self.layoutIfNeeded()
+			}
+		}
+	}
+
 	let titleLabel: UILabel = {
 		let label: UILabel = UILabel()
 		label.font = UIFont.preferredFont(forTextStyle: .title2)
@@ -822,28 +843,69 @@ final class DemoView: UIView {
 		return label
 	}()
 
-	let modelHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Model checkpoint")
-	let modelSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Select the trained Moebius family: places, face checkpoints, or the base pretrained model.")
-	let precisionHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Model precision")
-	let precisionSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Choose the MLX weight format. f32 is the full export; smaller quants reduce size and can change output quality.")
-	let generationHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Sampling controls")
-	let generationSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Denoising steps, guidance scale, and seed control generation. Paste-back restores unmasked source pixels after decoding.")
-	let maskToolsHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Mask drawing controls")
-	let maskToolsSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Paint the area to replace in blue, erase mistakes, and adjust the brush size before running the model.")
-	let actionsHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Image and execution controls")
-	let actionsSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Load an image or reset the sample, clear the editable mask, run the selected quant, or benchmark all quants.")
-	let modelControl: UISegmentedControl = UISegmentedControl()
-	let precisionControl: UISegmentedControl = UISegmentedControl()
-	let stepsLabel: UILabel = {
-		let label: UILabel = UILabel()
-		label.font = UIFont.preferredFont(forTextStyle: .subheadline)
-		label.textColor = UIColor.secondaryLabel
-		return label
+	let modelButton: UIButton = {
+		var configuration: UIButton.Configuration = UIButton.Configuration.tinted()
+		configuration.title = "Model"
+		configuration.image = UIImage(systemName: "cube")
+		configuration.imagePadding = 8
+		let button: UIButton = UIButton(configuration: configuration)
+		button.accessibilityIdentifier = "model-menu"
+		return button
 	}()
 
+	let settingsButton: UIButton = {
+		var configuration: UIButton.Configuration = UIButton.Configuration.tinted()
+		configuration.title = "Options"
+		configuration.image = UIImage(systemName: "slider.horizontal.3")
+		configuration.imagePadding = 8
+		let button: UIButton = UIButton(configuration: configuration)
+		button.accessibilityIdentifier = "options"
+		return button
+	}()
+
+	let loadImageButton: UIButton = DemoView.makeButton(title: "Load image", imageName: "photo", filled: false, identifier: "load-image")
+	let runButton: UIButton = DemoView.makeButton(title: "Generate", imageName: "play.fill", filled: true, identifier: "run-sample")
+	let resetSampleButton: UIButton = DemoView.makeButton(title: "Use sample", imageName: "arrow.counterclockwise", filled: false, identifier: "reset-sample")
+	let clearMaskButton: UIButton = DemoView.makeButton(title: "Clear mask", imageName: "eraser", filled: false, identifier: "clear-mask")
+	let compareButton: UIButton = DemoView.makeButton(title: "Compare quants", imageName: "square.grid.2x2", filled: false, identifier: "compare-quants")
+
+	let sourceTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Source")
+	let resultTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Result")
+	let historyTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Run log")
+	let sampleTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Source")
+	let maskTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Source mask")
+	let sampleImageView: UIImageView = DemoView.makeImageView(identifier: "sample-image")
+	let maskEditorView: DemoMaskEditorView = DemoMaskEditorView()
+	let resultImageView: UIImageView = DemoView.makeImageView(identifier: "result-image")
+	let historyView: DemoHistoryView = DemoHistoryView()
+
+	let inspectorPanel: UIView = {
+		let view: UIView = UIView()
+		view.backgroundColor = UIColor.secondarySystemBackground
+		view.layer.cornerCurve = .continuous
+		view.layer.shadowColor = UIColor.black.cgColor
+		view.layer.shadowOpacity = 0.12
+		view.layer.shadowRadius = 18
+		view.layer.shadowOffset = CGSize(width: 0, height: 8)
+		return view
+	}()
+
+	let modelHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Model")
+	let modelSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Pick model and precision. Checks local files before Hub.")
+	let generationHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Generation")
+	let generationSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Defaults are tuned for quick comparisons; adjust only when needed.")
+	let maskToolsHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Mask")
+	let maskToolsSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Paint the area to replace over the source image.")
+	let actionsHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Utilities")
+	let actionsSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Sample reset, mask cleanup, and quant comparison.")
+	let precisionHeaderLabel: UILabel = DemoView.makeSectionLabel(text: "Model precision")
+	let precisionSubtitleLabel: UILabel = DemoView.makeSubtitleLabel(text: "Precision is selected from the model menu.")
+
+	let stepsLabel: UILabel = DemoView.makeControlLabel()
 	let guidanceLabel: UILabel = DemoView.makeControlLabel()
 	let seedLabel: UILabel = DemoView.makeControlLabel()
 	let brushLabel: UILabel = DemoView.makeControlLabel()
+	let pasteBackLabel: UILabel = DemoView.makeControlLabel(text: "Paste back source pixels")
 
 	let stepper: UIStepper = {
 		let stepper: UIStepper = UIStepper()
@@ -876,127 +938,83 @@ final class DemoView: UIView {
 	}()
 
 	let paintModeControl: UISegmentedControl = {
-		let control: UISegmentedControl = UISegmentedControl(items: ["Paint mask", "Erase mask"])
+		let control: UISegmentedControl = UISegmentedControl(items: ["Paint", "Erase"])
 		control.selectedSegmentIndex = 0
 		return control
 	}()
 
-	let pasteBackLabel: UILabel = DemoView.makeControlLabel(text: "Paste back source pixels")
 	let pasteBackSwitch: UISwitch = UISwitch()
-
-	let loadImageButton: UIButton = {
-		var configuration: UIButton.Configuration = UIButton.Configuration.tinted()
-		configuration.title = "Load image"
-		configuration.image = UIImage(systemName: "photo")
-		configuration.imagePadding = 8
-		let button: UIButton = UIButton(configuration: configuration)
-		button.accessibilityIdentifier = "load-image"
-		return button
-	}()
-
-	let resetSampleButton: UIButton = {
-		var configuration: UIButton.Configuration = UIButton.Configuration.tinted()
-		configuration.title = "Use sample"
-		configuration.image = UIImage(systemName: "arrow.counterclockwise")
-		configuration.imagePadding = 8
-		let button: UIButton = UIButton(configuration: configuration)
-		button.accessibilityIdentifier = "reset-sample"
-		return button
-	}()
-
-	let clearMaskButton: UIButton = {
-		var configuration: UIButton.Configuration = UIButton.Configuration.tinted()
-		configuration.title = "Clear mask"
-		configuration.image = UIImage(systemName: "eraser")
-		configuration.imagePadding = 8
-		let button: UIButton = UIButton(configuration: configuration)
-		button.accessibilityIdentifier = "clear-mask"
-		return button
-	}()
-
-	let runButton: UIButton = {
-		var configuration: UIButton.Configuration = UIButton.Configuration.filled()
-		configuration.title = "Run sample"
-		configuration.image = UIImage(systemName: "play.fill")
-		configuration.imagePadding = 8
-		let button: UIButton = UIButton(configuration: configuration)
-		button.accessibilityIdentifier = "run-sample"
-		return button
-	}()
-
-	let compareButton: UIButton = {
-		var configuration: UIButton.Configuration = UIButton.Configuration.filled()
-		configuration.title = "Compare quants"
-		configuration.image = UIImage(systemName: "square.grid.2x2")
-		configuration.imagePadding = 8
-		let button: UIButton = UIButton(configuration: configuration)
-		button.accessibilityIdentifier = "compare-quants"
-		return button
-	}()
-
-	let sampleTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Sample")
-	let maskTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Paint mask")
-	let resultTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Result")
-	let historyTitleLabel: UILabel = DemoView.makeSectionLabel(text: "Runs")
-	let historyView: DemoHistoryView = DemoHistoryView()
-	let sampleImageView: UIImageView = DemoView.makeImageView(identifier: "sample-image")
-	let maskEditorView: DemoMaskEditorView = DemoMaskEditorView()
-	let resultImageView: UIImageView = DemoView.makeImageView(identifier: "result-image")
 
 	override init(frame: CGRect) {
 		super.init(frame: frame)
 		self.backgroundColor = UIColor.systemBackground
-		self.modelControl.accessibilityLabel = "Model checkpoint"
-		self.precisionControl.accessibilityLabel = "Model precision"
+		self.modelButton.accessibilityLabel = "Model checkpoint"
 		self.stepper.accessibilityLabel = "Denoising steps"
 		self.guidanceSlider.accessibilityLabel = "Guidance scale"
 		self.seedStepper.accessibilityLabel = "Random seed"
 		self.brushSlider.accessibilityLabel = "Brush size"
 		self.paintModeControl.accessibilityLabel = "Mask edit mode"
 		self.pasteBackSwitch.accessibilityLabel = "Paste back source pixels"
-		self.addSubview(self.titleLabel)
-		self.addSubview(self.statusLabel)
-		self.addSubview(self.modelHeaderLabel)
-		self.addSubview(self.modelSubtitleLabel)
-		self.addSubview(self.modelControl)
-		self.addSubview(self.precisionHeaderLabel)
-		self.addSubview(self.precisionSubtitleLabel)
-		self.addSubview(self.precisionControl)
-		self.addSubview(self.generationHeaderLabel)
-		self.addSubview(self.generationSubtitleLabel)
-		self.addSubview(self.stepsLabel)
-		self.addSubview(self.stepper)
-		self.addSubview(self.guidanceLabel)
-		self.addSubview(self.guidanceSlider)
-		self.addSubview(self.seedLabel)
-		self.addSubview(self.seedStepper)
-		self.addSubview(self.maskToolsHeaderLabel)
-		self.addSubview(self.maskToolsSubtitleLabel)
-		self.addSubview(self.brushLabel)
-		self.addSubview(self.brushSlider)
-		self.addSubview(self.paintModeControl)
-		self.addSubview(self.pasteBackLabel)
-		self.addSubview(self.pasteBackSwitch)
-		self.addSubview(self.actionsHeaderLabel)
-		self.addSubview(self.actionsSubtitleLabel)
-		self.addSubview(self.loadImageButton)
-		self.addSubview(self.resetSampleButton)
-		self.addSubview(self.clearMaskButton)
-		self.addSubview(self.runButton)
-		self.addSubview(self.compareButton)
-		self.addSubview(self.sampleTitleLabel)
-		self.addSubview(self.maskTitleLabel)
-		self.addSubview(self.resultTitleLabel)
-		self.addSubview(self.historyTitleLabel)
-		self.addSubview(self.historyView)
-		self.addSubview(self.sampleImageView)
-		self.addSubview(self.maskEditorView)
-		self.addSubview(self.resultImageView)
+
+		for subview in [
+			self.titleLabel,
+			self.statusLabel,
+			self.settingsButton,
+			self.loadImageButton,
+			self.runButton,
+			self.sourceTitleLabel,
+			self.resultTitleLabel,
+			self.maskEditorView,
+			self.resultImageView,
+			self.historyTitleLabel,
+			self.historyView,
+			self.inspectorPanel,
+		] {
+			self.addSubview(subview)
+		}
+
+		for subview in [
+			self.modelHeaderLabel,
+			self.modelSubtitleLabel,
+			self.modelButton,
+			self.generationHeaderLabel,
+			self.generationSubtitleLabel,
+			self.stepsLabel,
+			self.stepper,
+			self.guidanceLabel,
+			self.guidanceSlider,
+			self.seedLabel,
+			self.seedStepper,
+			self.maskToolsHeaderLabel,
+			self.maskToolsSubtitleLabel,
+			self.brushLabel,
+			self.brushSlider,
+			self.paintModeControl,
+			self.pasteBackLabel,
+			self.pasteBackSwitch,
+			self.actionsHeaderLabel,
+			self.actionsSubtitleLabel,
+			self.resetSampleButton,
+			self.clearMaskButton,
+			self.compareButton,
+		] {
+			self.inspectorPanel.addSubview(subview)
+		}
 	}
 
 	@available(*, unavailable)
 	required init?(coder: NSCoder) {
 		fatalError("init(coder:) has not been implemented")
+	}
+
+	private static func makeButton(title: String, imageName: String, filled: Bool, identifier: String) -> UIButton {
+		var configuration: UIButton.Configuration = filled ? UIButton.Configuration.filled() : UIButton.Configuration.tinted()
+		configuration.title = title
+		configuration.image = UIImage(systemName: imageName)
+		configuration.imagePadding = 8
+		let button: UIButton = UIButton(configuration: configuration)
+		button.accessibilityIdentifier = identifier
+		return button
 	}
 
 	private static func makeSectionLabel(text: String) -> UILabel {
@@ -1022,7 +1040,7 @@ final class DemoView: UIView {
 		label.font = UIFont.preferredFont(forTextStyle: .footnote)
 		label.textColor = UIColor.secondaryLabel
 		label.text = text
-		label.numberOfLines = 2
+		label.numberOfLines = 3
 		return label
 	}
 
@@ -1040,162 +1058,140 @@ final class DemoView: UIView {
 	override func layoutSubviews() {
 		super.layoutSubviews()
 
-		let inset: CGFloat = 20
-		let spacing: CGFloat = 12
 		let safeArea: UIEdgeInsets = self.safeAreaInsets
-		let contentWidth: CGFloat = self.bounds.width - safeArea.left - safeArea.right - (inset * 2)
+		let inset: CGFloat = 18
+		let spacing: CGFloat = 12
+		let wideLayout: Bool = self.bounds.width >= 900
+		let compactInspector: Bool = self.bounds.width < 760
+		let inspectorWidth: CGFloat = wideLayout ? 300 : min(320, self.bounds.width - safeArea.left - safeArea.right - (inset * 2))
+		let contentRightInset: CGFloat = wideLayout ? inspectorWidth + spacing : 0
+		let contentX: CGFloat = safeArea.left + inset
+		let contentWidth: CGFloat = self.bounds.width - safeArea.left - safeArea.right - (inset * 2) - contentRightInset
 		var y: CGFloat = safeArea.top + inset
 
-		self.titleLabel.frame = CGRect(x: safeArea.left + inset, y: y, width: contentWidth, height: 32)
-		y = self.titleLabel.frame.maxY + 4
-		self.statusLabel.frame = CGRect(x: safeArea.left + inset, y: y, width: contentWidth, height: 38)
-		y = self.statusLabel.frame.maxY + spacing
-		y = self.layoutHeader(
-			titleLabel: self.modelHeaderLabel,
-			subtitleLabel: self.modelSubtitleLabel,
-			y: y,
-			x: safeArea.left + inset,
-			width: contentWidth
-		)
-		self.modelControl.frame = CGRect(x: safeArea.left + inset, y: y, width: contentWidth, height: 34)
-		y = self.modelControl.frame.maxY + spacing
-		y = self.layoutHeader(
-			titleLabel: self.precisionHeaderLabel,
-			subtitleLabel: self.precisionSubtitleLabel,
-			y: y,
-			x: safeArea.left + inset,
-			width: contentWidth
-		)
-		self.precisionControl.frame = CGRect(x: safeArea.left + inset, y: y, width: contentWidth, height: 34)
-		y = self.precisionControl.frame.maxY + (spacing + 2)
-		y = self.layoutHeader(
-			titleLabel: self.generationHeaderLabel,
-			subtitleLabel: self.generationSubtitleLabel,
-			y: y,
-			x: safeArea.left + inset,
-			width: contentWidth
-		)
-		let controlHeight: CGFloat = 34
-		if self.bounds.width >= 820 {
-			let halfWidth: CGFloat = floor((contentWidth - spacing) / 2)
-			let secondColumnX: CGFloat = safeArea.left + inset + halfWidth + spacing
-			self.stepsLabel.frame = CGRect(x: safeArea.left + inset, y: y + 3, width: 132, height: controlHeight)
-			self.stepper.frame = CGRect(x: self.stepsLabel.frame.maxX + 6, y: y, width: self.stepper.intrinsicContentSize.width, height: controlHeight)
-			self.guidanceLabel.frame = CGRect(x: secondColumnX, y: y + 3, width: 138, height: controlHeight)
-			self.guidanceSlider.frame = CGRect(x: self.guidanceLabel.frame.maxX + 6, y: y, width: max(120, halfWidth - 144), height: controlHeight)
-			y += controlHeight + 8
-			self.seedLabel.frame = CGRect(x: safeArea.left + inset, y: y + 3, width: 118, height: controlHeight)
-			self.seedStepper.frame = CGRect(x: self.seedLabel.frame.maxX + 6, y: y, width: self.seedStepper.intrinsicContentSize.width, height: controlHeight)
-			self.pasteBackLabel.frame = CGRect(x: secondColumnX, y: y + 3, width: 168, height: controlHeight)
-			self.pasteBackSwitch.frame = CGRect(x: self.pasteBackLabel.frame.maxX + 6, y: y, width: self.pasteBackSwitch.intrinsicContentSize.width, height: controlHeight)
-			y += controlHeight + (spacing + 2)
-			y = self.layoutHeader(
-				titleLabel: self.maskToolsHeaderLabel,
-				subtitleLabel: self.maskToolsSubtitleLabel,
-				y: y,
-				x: safeArea.left + inset,
-				width: contentWidth
-			)
-			self.brushLabel.frame = CGRect(x: safeArea.left + inset, y: y + 3, width: 142, height: controlHeight)
-			self.brushSlider.frame = CGRect(x: self.brushLabel.frame.maxX + 6, y: y, width: min(300, max(120, halfWidth - 148)), height: controlHeight)
-			self.paintModeControl.frame = CGRect(x: secondColumnX, y: y, width: min(220, halfWidth), height: controlHeight)
-			y += controlHeight + spacing
-		}
-		else {
-			self.stepsLabel.frame = CGRect(x: safeArea.left + inset, y: y + 3, width: min(144, contentWidth * 0.55), height: controlHeight)
-			self.stepper.frame = CGRect(x: self.stepsLabel.frame.maxX + 6, y: y, width: self.stepper.intrinsicContentSize.width, height: controlHeight)
-			y += controlHeight + 8
-			self.guidanceLabel.frame = CGRect(x: safeArea.left + inset, y: y + 3, width: min(144, contentWidth * 0.55), height: controlHeight)
-			self.guidanceSlider.frame = CGRect(x: self.guidanceLabel.frame.maxX + 6, y: y, width: max(0, contentWidth - self.guidanceLabel.frame.width - 6), height: controlHeight)
-			y += controlHeight + 8
-			self.seedLabel.frame = CGRect(x: safeArea.left + inset, y: y + 3, width: min(120, contentWidth * 0.45), height: controlHeight)
-			self.seedStepper.frame = CGRect(x: self.seedLabel.frame.maxX + 6, y: y, width: self.seedStepper.intrinsicContentSize.width, height: controlHeight)
-			self.pasteBackLabel.frame = CGRect(x: self.seedStepper.frame.maxX + spacing, y: y + 3, width: max(0, contentWidth - (self.seedStepper.frame.maxX - (safeArea.left + inset)) - spacing - self.pasteBackSwitch.intrinsicContentSize.width - 6), height: controlHeight)
-			self.pasteBackSwitch.frame = CGRect(x: self.pasteBackLabel.frame.maxX + 6, y: y, width: self.pasteBackSwitch.intrinsicContentSize.width, height: controlHeight)
-			y += controlHeight + (spacing + 2)
-			y = self.layoutHeader(
-				titleLabel: self.maskToolsHeaderLabel,
-				subtitleLabel: self.maskToolsSubtitleLabel,
-				y: y,
-				x: safeArea.left + inset,
-				width: contentWidth
-			)
-			self.brushLabel.frame = CGRect(x: safeArea.left + inset, y: y + 3, width: min(142, contentWidth * 0.55), height: controlHeight)
-			self.brushSlider.frame = CGRect(x: self.brushLabel.frame.maxX + 6, y: y, width: max(0, contentWidth - self.brushLabel.frame.width - 6), height: controlHeight)
-			y += controlHeight + 8
-			self.paintModeControl.frame = CGRect(x: safeArea.left + inset, y: y, width: contentWidth, height: controlHeight)
-			y += controlHeight + spacing
-		}
-
-		y = self.layoutHeader(
-			titleLabel: self.actionsHeaderLabel,
-			subtitleLabel: self.actionsSubtitleLabel,
-			y: y,
-			x: safeArea.left + inset,
-			width: contentWidth
-		)
-		let buttonWidth: CGFloat = self.bounds.width >= 820 ? floor((contentWidth - (spacing * 4)) / 5) : contentWidth
-		let buttonHeight: CGFloat = 44
-		if self.bounds.width >= 820 {
-			self.loadImageButton.frame = CGRect(x: safeArea.left + inset, y: y, width: buttonWidth, height: buttonHeight)
-			self.resetSampleButton.frame = CGRect(x: self.loadImageButton.frame.maxX + spacing, y: y, width: buttonWidth, height: buttonHeight)
-			self.clearMaskButton.frame = CGRect(x: self.resetSampleButton.frame.maxX + spacing, y: y, width: buttonWidth, height: buttonHeight)
-			self.runButton.frame = CGRect(x: self.clearMaskButton.frame.maxX + spacing, y: y, width: buttonWidth, height: buttonHeight)
-			self.compareButton.frame = CGRect(x: self.runButton.frame.maxX + spacing, y: y, width: buttonWidth, height: buttonHeight)
-			y = self.compareButton.frame.maxY + spacing
-		}
-		else {
-			self.loadImageButton.frame = CGRect(x: safeArea.left + inset, y: y, width: buttonWidth, height: buttonHeight)
-			y = self.loadImageButton.frame.maxY + 8
-			self.resetSampleButton.frame = CGRect(x: safeArea.left + inset, y: y, width: buttonWidth, height: buttonHeight)
-			y = self.resetSampleButton.frame.maxY + 8
-			self.clearMaskButton.frame = CGRect(x: safeArea.left + inset, y: y, width: buttonWidth, height: buttonHeight)
-			y = self.clearMaskButton.frame.maxY + 8
-			self.runButton.frame = CGRect(x: safeArea.left + inset, y: y, width: buttonWidth, height: buttonHeight)
+		let topButtonHeight: CGFloat = 38
+		let settingsWidth: CGFloat = compactInspector ? 104 : 0
+		if contentWidth < 520 {
+			self.titleLabel.frame = CGRect(x: contentX, y: y, width: max(80, contentWidth - settingsWidth - 8), height: 34)
+			self.settingsButton.isHidden = false
+			self.settingsButton.frame = CGRect(x: contentX + contentWidth - settingsWidth, y: y, width: settingsWidth, height: topButtonHeight)
+			y = max(self.titleLabel.frame.maxY, self.settingsButton.frame.maxY) + 8
+			let buttonWidth: CGFloat = floor((contentWidth - 8) / 2)
+			self.loadImageButton.frame = CGRect(x: contentX, y: y, width: buttonWidth, height: topButtonHeight)
+			self.runButton.frame = CGRect(x: self.loadImageButton.frame.maxX + 8, y: y, width: contentWidth - buttonWidth - 8, height: topButtonHeight)
 			y = self.runButton.frame.maxY + 8
-			self.compareButton.frame = CGRect(x: safeArea.left + inset, y: y, width: buttonWidth, height: buttonHeight)
-			y = self.compareButton.frame.maxY + spacing
 		}
-		self.historyTitleLabel.frame = CGRect(x: safeArea.left + inset, y: y, width: contentWidth, height: 24)
-		y = self.historyTitleLabel.frame.maxY + 4
-		self.historyView.frame = CGRect(x: safeArea.left + inset, y: y, width: contentWidth, height: 112)
-		y = self.historyView.frame.maxY + spacing
+		else {
+			let runWidth: CGFloat = min(170, max(124, contentWidth * 0.22))
+			self.runButton.frame = CGRect(x: contentX + contentWidth - runWidth, y: y, width: runWidth, height: topButtonHeight)
+			if compactInspector {
+				self.settingsButton.isHidden = false
+				self.settingsButton.frame = CGRect(x: self.runButton.frame.minX - settingsWidth - 8, y: y, width: settingsWidth, height: topButtonHeight)
+			}
+			else {
+				self.settingsButton.isHidden = true
+				self.settingsButton.frame = CGRect(x: self.runButton.frame.minX, y: y, width: 0, height: topButtonHeight)
+			}
+			let loadWidth: CGFloat = min(170, max(124, contentWidth * 0.22))
+			let availableLoadX: CGFloat = self.settingsButton.frame.minX - loadWidth - 8
+			self.titleLabel.frame = CGRect(x: contentX, y: y, width: min(220, max(80, availableLoadX - contentX - 8)), height: 34)
+			self.loadImageButton.frame = CGRect(x: max(self.titleLabel.frame.maxX + 8, availableLoadX), y: y, width: loadWidth, height: topButtonHeight)
+			y = max(self.titleLabel.frame.maxY, self.runButton.frame.maxY) + 8
+		}
+		self.statusLabel.frame = CGRect(x: contentX, y: y, width: contentWidth, height: 34)
+		y = self.statusLabel.frame.maxY + spacing
 
-		let columns: Int = self.bounds.width >= 820 ? 3 : 1
-		let imageSpacing: CGFloat = 12
+		let logHeight: CGFloat = self.bounds.height >= 760 ? 118 : 88
+		let availableHeight: CGFloat = max(240, self.bounds.height - safeArea.bottom - y - logHeight - inset - 34)
 		let titleHeight: CGFloat = 24
-		let availableHeight: CGFloat = max(180, self.bounds.height - safeArea.bottom - y - inset)
-		let itemWidth: CGFloat = columns == 3 ? floor((contentWidth - (imageSpacing * 2)) / 3) : contentWidth
-		let itemHeight: CGFloat = columns == 3 ? min(itemWidth, availableHeight - titleHeight) : min(contentWidth, floor((availableHeight - (titleHeight * 3) - (imageSpacing * 2)) / 3))
-		let imageViews: [UIView] = [self.sampleImageView, self.maskEditorView, self.resultImageView]
-		let titleLabels: [UILabel] = [self.sampleTitleLabel, self.maskTitleLabel, self.resultTitleLabel]
-		for (index, imageView) in imageViews.enumerated() {
-			let column: Int = columns == 3 ? index : 0
-			let row: Int = columns == 3 ? 0 : index
-			let rowY: CGFloat = columns == 3 ? y : y + (CGFloat(row) * (titleHeight + itemHeight + imageSpacing))
-			let titleFrame: CGRect = CGRect(
-				x: safeArea.left + inset + (CGFloat(column) * (itemWidth + imageSpacing)),
-				y: rowY,
-				width: itemWidth,
-				height: titleHeight
-			)
-			titleLabels[index].frame = titleFrame
-			imageView.frame = CGRect(
-				x: titleFrame.minX,
-				y: titleFrame.maxY,
-				width: itemWidth,
-				height: itemHeight
-			)
-			imageView.layer.cornerRadius = 8
+		if contentWidth >= 620 {
+			let itemWidth: CGFloat = floor((contentWidth - spacing) / 2)
+			let imageHeight: CGFloat = min(itemWidth, availableHeight - titleHeight)
+			self.sourceTitleLabel.frame = CGRect(x: contentX, y: y, width: itemWidth, height: titleHeight)
+			self.resultTitleLabel.frame = CGRect(x: contentX + itemWidth + spacing, y: y, width: itemWidth, height: titleHeight)
+			self.maskEditorView.frame = CGRect(x: self.sourceTitleLabel.frame.minX, y: self.sourceTitleLabel.frame.maxY, width: itemWidth, height: imageHeight)
+			self.resultImageView.frame = CGRect(x: self.resultTitleLabel.frame.minX, y: self.resultTitleLabel.frame.maxY, width: itemWidth, height: imageHeight)
+			y = self.maskEditorView.frame.maxY + spacing
 		}
+		else {
+			let imageHeight: CGFloat = min(contentWidth, floor((availableHeight - (titleHeight * 2) - spacing) / 2))
+			self.sourceTitleLabel.frame = CGRect(x: contentX, y: y, width: contentWidth, height: titleHeight)
+			self.maskEditorView.frame = CGRect(x: contentX, y: self.sourceTitleLabel.frame.maxY, width: contentWidth, height: imageHeight)
+			self.resultTitleLabel.frame = CGRect(x: contentX, y: self.maskEditorView.frame.maxY + spacing, width: contentWidth, height: titleHeight)
+			self.resultImageView.frame = CGRect(x: contentX, y: self.resultTitleLabel.frame.maxY, width: contentWidth, height: imageHeight)
+			y = self.resultImageView.frame.maxY + spacing
+		}
+		self.maskEditorView.layer.cornerRadius = 8
+		self.resultImageView.layer.cornerRadius = 8
+
+		self.historyTitleLabel.frame = CGRect(x: contentX, y: y, width: contentWidth, height: 24)
+		self.historyView.frame = CGRect(x: contentX, y: self.historyTitleLabel.frame.maxY + 4, width: contentWidth, height: max(72, min(logHeight, self.bounds.height - self.historyTitleLabel.frame.maxY - safeArea.bottom - inset)))
+
+		let panelX: CGFloat
+		if wideLayout {
+			panelX = self.bounds.width - safeArea.right - inset - inspectorWidth
+		}
+		else {
+			panelX = self.isInspectorOpen ? self.bounds.width - safeArea.right - inset - inspectorWidth : self.bounds.width + 8
+		}
+		self.inspectorPanel.frame = CGRect(x: panelX, y: safeArea.top + inset, width: inspectorWidth, height: self.bounds.height - safeArea.top - safeArea.bottom - (inset * 2))
+		self.inspectorPanel.layer.cornerRadius = 14
+		self.layoutInspectorContent()
+	}
+
+	private func layoutInspectorContent() {
+		let inset: CGFloat = 14
+		let spacing: CGFloat = 10
+		let width: CGFloat = self.inspectorPanel.bounds.width - (inset * 2)
+		var y: CGFloat = inset
+
+		y = self.layoutHeader(titleLabel: self.modelHeaderLabel, subtitleLabel: self.modelSubtitleLabel, y: y, x: inset, width: width)
+		self.modelButton.frame = CGRect(x: inset, y: y, width: width, height: 40)
+		if self.modelButton.superview !== self.inspectorPanel {
+			self.modelButton.removeFromSuperview()
+			self.inspectorPanel.addSubview(self.modelButton)
+		}
+		y = self.modelButton.frame.maxY + spacing
+
+		y = self.layoutHeader(titleLabel: self.generationHeaderLabel, subtitleLabel: self.generationSubtitleLabel, y: y, x: inset, width: width)
+		y = self.layoutStepper(label: self.stepsLabel, stepper: self.stepper, y: y, x: inset, width: width)
+		y = self.layoutSlider(label: self.guidanceLabel, slider: self.guidanceSlider, y: y, x: inset, width: width)
+		y = self.layoutStepper(label: self.seedLabel, stepper: self.seedStepper, y: y, x: inset, width: width)
+		self.pasteBackLabel.frame = CGRect(x: inset, y: y + 4, width: width - self.pasteBackSwitch.intrinsicContentSize.width - 8, height: 32)
+		self.pasteBackSwitch.frame = CGRect(x: inset + width - self.pasteBackSwitch.intrinsicContentSize.width, y: y, width: self.pasteBackSwitch.intrinsicContentSize.width, height: self.pasteBackSwitch.intrinsicContentSize.height)
+		y = max(self.pasteBackLabel.frame.maxY, self.pasteBackSwitch.frame.maxY) + spacing
+
+		y = self.layoutHeader(titleLabel: self.maskToolsHeaderLabel, subtitleLabel: self.maskToolsSubtitleLabel, y: y, x: inset, width: width)
+		y = self.layoutSlider(label: self.brushLabel, slider: self.brushSlider, y: y, x: inset, width: width)
+		self.paintModeControl.frame = CGRect(x: inset, y: y, width: width, height: 34)
+		y = self.paintModeControl.frame.maxY + spacing
+
+		y = self.layoutHeader(titleLabel: self.actionsHeaderLabel, subtitleLabel: self.actionsSubtitleLabel, y: y, x: inset, width: width)
+		self.resetSampleButton.frame = CGRect(x: inset, y: y, width: width, height: 40)
+		y = self.resetSampleButton.frame.maxY + 8
+		self.clearMaskButton.frame = CGRect(x: inset, y: y, width: width, height: 40)
+		y = self.clearMaskButton.frame.maxY + 8
+		self.compareButton.frame = CGRect(x: inset, y: y, width: width, height: 40)
 	}
 
 	private func layoutHeader(titleLabel: UILabel, subtitleLabel: UILabel, y: CGFloat, x: CGFloat, width: CGFloat) -> CGFloat {
-		let titleHeight: CGFloat = 22
-		titleLabel.frame = CGRect(x: x, y: y, width: width, height: titleHeight)
+		titleLabel.frame = CGRect(x: x, y: y, width: width, height: 22)
 		let subtitleSize: CGSize = subtitleLabel.sizeThatFits(CGSize(width: width, height: CGFloat.greatestFiniteMagnitude))
-		subtitleLabel.frame = CGRect(x: x, y: titleLabel.frame.maxY, width: width, height: min(36, ceil(subtitleSize.height)))
-		return subtitleLabel.frame.maxY + 6
+		subtitleLabel.frame = CGRect(x: x, y: titleLabel.frame.maxY, width: width, height: min(48, ceil(subtitleSize.height)))
+		return subtitleLabel.frame.maxY + 8
+	}
+
+	private func layoutStepper(label: UILabel, stepper: UIStepper, y: CGFloat, x: CGFloat, width: CGFloat) -> CGFloat {
+		let stepperSize: CGSize = stepper.intrinsicContentSize
+		label.frame = CGRect(x: x, y: y + 4, width: width - stepperSize.width - 8, height: 32)
+		stepper.frame = CGRect(x: x + width - stepperSize.width, y: y, width: stepperSize.width, height: stepperSize.height)
+		return max(label.frame.maxY, stepper.frame.maxY) + 8
+	}
+
+	private func layoutSlider(label: UILabel, slider: UISlider, y: CGFloat, x: CGFloat, width: CGFloat) -> CGFloat {
+		label.frame = CGRect(x: x, y: y, width: width, height: 24)
+		slider.frame = CGRect(x: x, y: label.frame.maxY, width: width, height: 32)
+		return slider.frame.maxY + 8
 	}
 }
 

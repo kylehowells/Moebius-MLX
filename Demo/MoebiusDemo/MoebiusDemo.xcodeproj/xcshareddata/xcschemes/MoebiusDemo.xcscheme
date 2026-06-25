@@ -41,6 +41,17 @@
                ReferencedContainer = "container:MoebiusDemo.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "CC0FA3842FEBAE34000611C3"
+               BuildableName = "MoebiusDemoUITests.xctest"
+               BlueprintName = "MoebiusDemoUITests"
+               ReferencedContainer = "container:MoebiusDemo.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <MacroExpansion>
          <BuildableReference

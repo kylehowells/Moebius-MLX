@@ -291,7 +291,7 @@ xcodebuild -project Demo/MoebiusDemo/MoebiusDemo.xcodeproj \
 
 In the demo, `ft_places2` exposes the standard `f32`, `f16`, `q8`, `q4`, `mxfp8`, and `mxfp4` options plus `q4 322M` and `q4 200M` candidate options. The Compare button runs every visible option for the selected model family, so selecting `ft_places2` compares the standard variants and both package-size candidates. Recent-run rows show status, steps, runtime, output mean, manifest-selected deployment MB, and observed resident memory MB for each completed variant.
 
-The demo UI is grouped with on-screen labels for model fine-tune, precision/quant selection, generation settings, mask tools, and image/run actions. It supports loading a source image, using the built-in sample, painting or erasing a blue inpaint mask directly over the image, clearing the mask, changing brush size, adjusting steps/guidance/seed, toggling paste-back, running one selected variant, or comparing the visible quant variants. Imported images start with an empty editable mask; the built-in sample starts with a circular mask so the app remains immediately runnable.
+The demo UI is image-first: the main surface is a source image with an editable mask painted directly over it, next to the generated result. Model choice lives in a `UIMenu` button inside a right-side inspector with generation, mask, and comparison controls; on narrow devices the inspector slides over the content behind an Options button. Imported images start with an empty editable mask; the built-in sample starts with a circular mask so the app remains immediately runnable.
 
 Build the demo app for iOS Simulator:
 

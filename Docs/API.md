@@ -219,7 +219,7 @@ MOEBIUS_DEMO_AUTORUN_STATUS=/tmp/moebius-demo-status.txt
 
 Single-variant autorun status lines include `seconds=`, `model_mb=`, `memory_mb=`, and image min/max/mean. Comparison status lines include per-variant `model_mbs=`, `memory_mbs=`, and `seconds=` maps. The physical-device helper copies the same status file back from the app container.
 
-The interactive UIKit surface exposes labeled sections for model fine-tune, precision/quant choice, generation settings, mask tools, and image/run actions. It can load a source image, use the synthetic sample, paint or erase the inpaint mask directly over the image, clear the mask, adjust brush size, steps, guidance, seed, and paste-back, then run either one selected variant or all visible variants for comparison. Imported images start with an empty editable mask; the synthetic sample starts with a circular mask for immediate one-click runs.
+The interactive UIKit surface follows the web-demo workflow: load a source image, paint the inpaint mask directly over it, pick a model from a menu, and generate into the result view. Advanced controls sit in the right inspector: model/precision selection, steps, guidance, seed, paste-back, brush size, paint/erase, sample reset, clear mask, and quant comparison. On narrow devices the inspector opens as a slide-over from the Options button. Imported images start with an empty editable mask; the synthetic sample starts with a circular mask for immediate one-click runs.
 
 Physical-device staging uses:
 
