@@ -33,6 +33,52 @@ vae_decoder_quantized.safetensors
 
 The manifest decides which files are active. `MoebiusModelDeploymentInfo` reports the manifest-selected deployment size, following symlinks when candidate views are used.
 
+## Model Resolution And Downloads
+
+Use `MoebiusModel.load(from:)` when the app already has a model directory, for example a bundled resource, an app-managed download, or a user-picked folder:
+
+```swift
+let localDirectory = URL(fileURLWithPath: "/path/to/ft_places2-q4", isDirectory: true)
+let model = try MoebiusModel.load(from: localDirectory)
+```
+
+Use `MoebiusModel.fromPretrained(...)` when the model may need to be resolved or downloaded:
+
+```swift
+let model = try await MoebiusModel.fromPretrained(
+	"ft_places2-q4",
+	onDownloadProgress: { progress in
+		Task { @MainActor in
+			progressView.progress = Float(progress.fractionCompleted)
+			statusLabel.text = "\(progress.completedUnitCount) / \(progress.totalUnitCount)"
+		}
+	}
+)
+```
+
+`fromPretrained` accepts:
+
+- a local model directory path
+- a direct path to `manifest.json`
+- a known variant name such as `ft_places2-q4`
+- a Hugging Face repo id such as `iky1e/moebius-ft-places2-mlx-q4`
+- a Hugging Face URL such as `https://huggingface.co/iky1e/moebius-ft-places2-mlx-q4`
+
+Named variants map to one Hub repo per family and precision: `moebius-<family>-mlx-<precision>`. For example, `ft_places2-q4-all-spatial-vae` maps to `iky1e/moebius-ft-places2-mlx-q4-all-spatial-vae`.
+
+Download progress is exposed through `MoebiusDownloadProgress`, which includes `repoID`, `revision`, `completedUnitCount`, `totalUnitCount`, `fractionCompleted`, and optional `bytesPerSecond`. The callback is passed through from the Hugging Face snapshot downloader so callers can show a determinate progress UI where the server reports total bytes.
+
+Default materialized snapshot locations:
+
+| Platform | Default |
+|---|---|
+| macOS with `HF_HUB_CACHE` | `$HF_HUB_CACHE/moebius-mlx` |
+| macOS with `HF_HOME` | `$HF_HOME/hub/moebius-mlx` |
+| macOS fallback | `~/.cache/huggingface/hub/moebius-mlx` |
+| iOS / sandboxed app fallback | app `Library/Application Support/Moebius-MLX/HuggingFace` |
+
+Pass `downloadBase:` to override where the materialized snapshot directory is written. The underlying Hub content cache is still created by Swift Hugging Face's default cache policy.
+
 ## Swift Usage
 
 ```swift
@@ -68,9 +114,13 @@ let outputRGB01 = try pipeline.runImageRGBFloats(
 `MoebiusModelResolver`
 
 - `resolve(name:preferredDirectory:modelRoot:)`: finds a variant directory by explicit directory, model root, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, app bundle resources, Application Support, Documents, or the local development model path.
+- `resolveOrDownload(source:revision:preferredDirectory:modelRoot:hfToken:downloadBase:progress:onDownloadProgress:)`: resolves local paths and known model names first, then downloads from Hugging Face when needed.
+- `downloadFromHub(repoID:revision:hfToken:downloadBase:onDownloadProgress:)`: downloads a specific Hub repo snapshot containing `README.md`, `manifest.json`, and `*.safetensors`.
+- `defaultHubRepoID(for:)`: maps local variant names to the default `iky1e/moebius-...` Hub repo naming convention.
 
 `MoebiusModel`
 
+- `fromPretrained(_:revision:hfToken:downloadBase:progress:onDownloadProgress:)`: resolves or downloads a model, exposes download progress, then loads it.
 - `load(from:progress:)`: loads manifest-selected UNet and VAE weights.
 - `loadSourceUNet(from:)`: loads the source f16/f32 UNet for conversion/debug paths.
 - `loadSourceAutoencoder(from:)`: loads source VAE files for conversion/debug paths.
@@ -107,6 +157,7 @@ Subcommands:
 | Command | Purpose |
 |---|---|
 | `inspect` | Load a converted model and print manifest, precision, active deployment files, size, and dtype byte-share details. |
+| `download` | Resolve or download a model from Hugging Face without loading MLX weights. |
 | `export-quantized` | Materialize quantized UNet and optional quantized VAE files inside a model directory. |
 | `vae-smoke` | Run VAE encode/decode on a zero image tensor and print shapes. |
 | `u-net-smoke` | Run one CFG UNet prediction on zero latent inputs and print the output shape. |
@@ -121,6 +172,11 @@ Examples:
 
 ```bash
 swift run moebius-mlx inspect ft_places2-q4
+
+swift run moebius-mlx download ft_places2-q4
+
+swift run moebius-mlx download https://huggingface.co/iky1e/moebius-ft-places2-mlx-q4 \
+  --download-base /tmp/moebius-hf-snapshots
 
 swift run moebius-mlx image-smoke ft_places2-f16 --steps 2
 
@@ -163,6 +219,8 @@ MOEBIUS_DEMO_AUTORUN_STATUS=/tmp/moebius-demo-status.txt
 
 Single-variant autorun status lines include `seconds=`, `model_mb=`, `memory_mb=`, and image min/max/mean. Comparison status lines include per-variant `model_mbs=`, `memory_mbs=`, and `seconds=` maps. The physical-device helper copies the same status file back from the app container.
 
+The interactive UIKit surface exposes labeled sections for model fine-tune, precision/quant choice, generation settings, mask tools, and image/run actions. It can load a source image, use the synthetic sample, paint or erase the inpaint mask directly over the image, clear the mask, adjust brush size, steps, guidance, seed, and paste-back, then run either one selected variant or all visible variants for comparison. Imported images start with an empty editable mask; the synthetic sample starts with a circular mask for immediate one-click runs.
+
 Physical-device staging uses:
 
 ```bash
@@ -170,7 +228,7 @@ Scripts/stage_models_for_ios.sh --output /tmp/moebius-ipad-models ft_places2-q4
 Scripts/run_device_autorun.sh --variant ft_places2-q4
 Scripts/run_device_autorun.sh --model ft_places2 --compare
 Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run
-Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300
+Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300 --launch-wait-seconds 300 --autorun-timeout-seconds 900
 ```
 
-The device autorun helper exits before build/install if CoreDevice reports the configured iPad as unavailable. `--wait-seconds` turns that into a bounded poll before build/install. `--compare` stages every visible precision for the selected model and launches the same comparison path as the Catalyst verifier. `--dry-run` prints the resolved staging list and launch environment before device lookup, so the compare plan can be validated while the physical iPad is offline.
+The device autorun helper exits before build/install if CoreDevice reports the configured iPad as unavailable. `--wait-seconds` turns that into a bounded poll before build/install. `--launch-wait-seconds` retries the app launch if SpringBoard rejects it because the iPad is locked. It builds with `generic/platform=iOS` by default because CoreDevice ids are not the same ids shown by `xcodebuild -showdestinations`; the CoreDevice id is still used for install, model copy, launch, and status readback. After launch, the helper tags the run with `MOEBIUS_DEMO_AUTORUN_RUN_ID` and polls the app-container status file until that same run writes `done` or `error`, bounded by `--autorun-timeout-seconds`. `--compare` stages every visible precision for the selected model and launches the same comparison path as the Catalyst verifier. `--dry-run` prints the resolved staging list and launch environment before device lookup, so the compare plan can be validated while the physical iPad is offline.

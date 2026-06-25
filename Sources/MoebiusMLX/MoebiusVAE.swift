@@ -1,7 +1,7 @@
 import Foundation
 import MLX
-import MLXNN
 import MLXRandom
+import MLXNN
 
 protocol MoebiusUnaryLayer {
 	func callAsFunction(_ x: MLXArray) -> MLXArray
@@ -258,6 +258,15 @@ public final class MoebiusAutoencoder: Module, @unchecked Sendable {
 		let moments: MLXArray = self.encodeMoments(image)
 		let (mean, _) = moments.split(axis: -1)
 		return mean * MLXArray(self.scalingFactor).asType(moments.dtype)
+	}
+
+	public func encodeSample(_ image: MLXArray) -> MLXArray {
+		let moments: MLXArray = self.encodeMoments(image)
+		let (mean, logvar) = moments.split(axis: -1)
+		let clampedLogvar: MLXArray = clip(logvar, min: -30, max: 20)
+		let std: MLXArray = exp(0.5 * clampedLogvar)
+		let sample: MLXArray = mean + (std * MLXRandom.normal(mean.shape, dtype: mean.dtype))
+		return sample * MLXArray(self.scalingFactor).asType(moments.dtype)
 	}
 
 	public func decode(_ latent: MLXArray) -> MLXArray {

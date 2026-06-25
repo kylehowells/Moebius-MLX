@@ -122,6 +122,37 @@ import MLX
 	#expect(resolvedDirect.standardizedFileURL == directDirectory.standardizedFileURL)
 }
 
+@Test func resolverMapsVariantNamesToHubRepos() async throws {
+	#expect(MoebiusModelResolver.defaultHubRepoID(for: "pretrained-f32") == "iky1e/moebius-pretrained-mlx-f32")
+	#expect(MoebiusModelResolver.defaultHubRepoID(for: "ft_places2-q4") == "iky1e/moebius-ft-places2-mlx-q4")
+	#expect(MoebiusModelResolver.defaultHubRepoID(for: "ft_places2-q4-all-spatial-vae") == "iky1e/moebius-ft-places2-mlx-q4-all-spatial-vae")
+	#expect(MoebiusModelResolver.defaultHubRepoID(for: "ft_celebahq-mxfp8") == "iky1e/moebius-ft-celebahq-mlx-mxfp8")
+	#expect(MoebiusModelResolver.defaultHubRepoID(for: "ft_ffhq-f16") == "iky1e/moebius-ft-ffhq-mlx-f16")
+	#expect(MoebiusModelResolver.defaultHubRepoID(for: "unknown-f16") == nil)
+}
+
+@Test func resolverNormalizesHubRepoURLs() async throws {
+	#expect(MoebiusModelResolver.normalizedHubRepoID("iky1e/moebius-ft-places2-mlx-q4") == "iky1e/moebius-ft-places2-mlx-q4")
+	#expect(MoebiusModelResolver.normalizedHubRepoID("https://huggingface.co/iky1e/moebius-ft-places2-mlx-q4") == "iky1e/moebius-ft-places2-mlx-q4")
+	#expect(MoebiusModelResolver.normalizedHubRepoID("https://huggingface.co/iky1e/moebius-ft-places2-mlx-q4/tree/main") == "iky1e/moebius-ft-places2-mlx-q4")
+}
+
+@Test func resolverAcceptsManifestFileAndDirectorySourcesBeforeHub() async throws {
+	let temporaryRoot: URL = FileManager.default.temporaryDirectory
+		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
+	defer {
+		try? FileManager.default.removeItem(at: temporaryRoot)
+	}
+
+	let modelDirectory: URL = temporaryRoot.appendingPathComponent("ft_places2-q4", isDirectory: true)
+	try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
+	let manifestURL: URL = modelDirectory.appendingPathComponent("manifest.json")
+	try Data("{}".utf8).write(to: manifestURL)
+
+	#expect(MoebiusModelResolver.localDirectoryIfPresent(modelDirectory.path)?.standardizedFileURL == modelDirectory.standardizedFileURL)
+	#expect(MoebiusModelResolver.localDirectoryIfPresent(manifestURL.path)?.standardizedFileURL == modelDirectory.standardizedFileURL)
+}
+
 @Test func deploymentInfoUsesManifestSelectedFilesAndResolvesSymlinks() async throws {
 	let temporaryRoot: URL = FileManager.default.temporaryDirectory
 		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)

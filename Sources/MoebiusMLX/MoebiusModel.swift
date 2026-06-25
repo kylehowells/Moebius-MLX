@@ -1,6 +1,25 @@
 import Foundation
+import Hub
 import MLX
 import MLXNN
+
+public struct MoebiusDownloadProgress: Sendable {
+	public let repoID: String
+	public let revision: String
+	public let completedUnitCount: Int64
+	public let totalUnitCount: Int64
+	public let fractionCompleted: Double
+	public let bytesPerSecond: Double?
+
+	public init(repoID: String, revision: String, progress: Progress, bytesPerSecond: Double?) {
+		self.repoID = repoID
+		self.revision = revision
+		self.completedUnitCount = progress.completedUnitCount
+		self.totalUnitCount = progress.totalUnitCount
+		self.fractionCompleted = progress.fractionCompleted
+		self.bytesPerSecond = bytesPerSecond
+	}
+}
 
 public final class MoebiusModel: @unchecked Sendable {
 	public let manifest: MoebiusModelManifest
@@ -27,6 +46,25 @@ public final class MoebiusModel: @unchecked Sendable {
 		self.vaeDecoderWeights = vaeDecoderWeights
 		self.unet = unet
 		self.autoencoder = autoencoder
+	}
+
+	public static func fromPretrained(
+		_ source: String = "ft_places2-q4",
+		revision: String = MoebiusModelResolver.defaultHubRevision,
+		hfToken: String? = nil,
+		downloadBase: URL? = nil,
+		progress: ((String) -> Void)? = nil,
+		onDownloadProgress: @escaping (MoebiusDownloadProgress) -> Void = { _ in }
+	) async throws -> MoebiusModel {
+		let directory: URL = try await MoebiusModelResolver.resolveOrDownload(
+			source: source,
+			revision: revision,
+			hfToken: hfToken,
+			downloadBase: downloadBase,
+			progress: progress,
+			onDownloadProgress: onDownloadProgress
+		)
+		return try self.load(from: directory, progress: progress)
 	}
 
 	public static func load(from directory: URL, progress: ((String) -> Void)? = nil) throws -> MoebiusModel {
@@ -331,6 +369,14 @@ public enum MoebiusRuntime {
 }
 
 public enum MoebiusModelResolver {
+	public static let defaultHubNamespace: String = "iky1e"
+	public static let defaultHubRevision: String = "main"
+	public static let hubFileGlobs: [String] = [
+		"README.md",
+		"manifest.json",
+		"*.safetensors",
+	]
+
 	public static func resolve(name: String, preferredDirectory: URL? = nil, modelRoot: URL? = nil) throws -> URL {
 		return try self.resolve(
 			name: name,
@@ -338,6 +384,125 @@ public enum MoebiusModelResolver {
 			modelRoot: modelRoot,
 			environment: ProcessInfo.processInfo.environment
 		)
+	}
+
+	public static func resolveOrDownload(
+		source: String,
+		revision: String = Self.defaultHubRevision,
+		preferredDirectory: URL? = nil,
+		modelRoot: URL? = nil,
+		hfToken: String? = nil,
+		downloadBase: URL? = nil,
+		progress: ((String) -> Void)? = nil,
+		onDownloadProgress: @escaping (MoebiusDownloadProgress) -> Void = { _ in }
+	) async throws -> URL {
+		if let localDirectory = self.localDirectoryIfPresent(source) {
+			return localDirectory
+		}
+
+		do {
+			return try self.resolve(name: source, preferredDirectory: preferredDirectory, modelRoot: modelRoot)
+		}
+		catch MoebiusError.modelNotFound {
+			let repoID: String
+			if source.contains("/") || source.contains("huggingface.co") {
+				repoID = self.normalizedHubRepoID(source)
+			}
+			else if let mappedRepoID = self.defaultHubRepoID(for: source) {
+				repoID = mappedRepoID
+			}
+			else {
+				throw MoebiusError.modelNotFound(source, [])
+			}
+
+			progress?("Downloading \(repoID)")
+			return try await self.downloadFromHub(
+				repoID: repoID,
+				revision: revision,
+				hfToken: hfToken,
+				downloadBase: downloadBase,
+				onDownloadProgress: onDownloadProgress
+			)
+		}
+	}
+
+	public static func defaultHubRepoID(for variantName: String) -> String? {
+		let parts: [String] = variantName.split(separator: "-").map(String.init)
+		guard parts.count >= 2 else {
+			return nil
+		}
+
+		let family: String
+		let precision: String
+		if parts[0] == "pretrained" {
+			family = "pretrained"
+			precision = parts.dropFirst().joined(separator: "-")
+		}
+		else if parts[0] == "ft_places2" || parts[0] == "ft_celebahq" || parts[0] == "ft_ffhq" {
+			family = parts[0].replacingOccurrences(of: "ft_", with: "ft-")
+			precision = parts.dropFirst().joined(separator: "-")
+		}
+		else {
+			return nil
+		}
+		guard precision.isEmpty == false else {
+			return nil
+		}
+		return "\(Self.defaultHubNamespace)/moebius-\(family)-mlx-\(precision)"
+	}
+
+	public static func defaultHubDownloadBase(fileManager: FileManager = .default) -> URL {
+		#if os(macOS)
+			let environment: [String: String] = ProcessInfo.processInfo.environment
+			if let hubCache = environment["HF_HUB_CACHE"], hubCache.isEmpty == false {
+				return URL(fileURLWithPath: hubCache, isDirectory: true).appendingPathComponent("moebius-mlx", isDirectory: true)
+			}
+			if let hfHome = environment["HF_HOME"], hfHome.isEmpty == false {
+				return URL(fileURLWithPath: hfHome, isDirectory: true)
+					.appendingPathComponent("hub", isDirectory: true)
+					.appendingPathComponent("moebius-mlx", isDirectory: true)
+			}
+			return fileManager.homeDirectoryForCurrentUser
+				.appendingPathComponent(".cache", isDirectory: true)
+				.appendingPathComponent("huggingface", isDirectory: true)
+				.appendingPathComponent("hub", isDirectory: true)
+				.appendingPathComponent("moebius-mlx", isDirectory: true)
+		#else
+			let applicationSupport: URL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+				?? fileManager.temporaryDirectory
+			return applicationSupport
+				.appendingPathComponent("Moebius-MLX", isDirectory: true)
+				.appendingPathComponent("HuggingFace", isDirectory: true)
+		#endif
+	}
+
+	public static func downloadFromHub(
+		repoID: String,
+		revision: String = Self.defaultHubRevision,
+		hfToken: String? = nil,
+		downloadBase: URL? = nil,
+		onDownloadProgress: @escaping (MoebiusDownloadProgress) -> Void = { _ in }
+	) async throws -> URL {
+		let normalizedRepoID: String = self.normalizedHubRepoID(repoID)
+		let destinationBase: URL = downloadBase ?? self.defaultHubDownloadBase()
+		let hub: HubApi = HubApi(downloadBase: destinationBase, cache: .default, hfToken: hfToken)
+		let directory: URL = try await hub.snapshot(
+			from: normalizedRepoID,
+			revision: revision,
+			matching: self.hubFileGlobs,
+			progressHandler: { progress, speed in
+				onDownloadProgress(MoebiusDownloadProgress(
+					repoID: normalizedRepoID,
+					revision: revision,
+					progress: progress,
+					bytesPerSecond: speed
+				))
+			}
+		)
+		if FileManager.default.fileExists(atPath: directory.appendingPathComponent("manifest.json").path) {
+			return directory
+		}
+		throw MoebiusError.downloadFailed("Downloaded '\(normalizedRepoID)' but did not find manifest.json in \(directory.path).")
 	}
 
 	static func resolve(
@@ -384,12 +549,39 @@ public enum MoebiusModelResolver {
 
 		throw MoebiusError.modelNotFound(name, candidates.map(\.path))
 	}
+
+	static func localDirectoryIfPresent(_ source: String, fileManager: FileManager = .default) -> URL? {
+		let local: URL = URL(fileURLWithPath: source).standardizedFileURL
+		if fileManager.fileExists(atPath: local.path) {
+			if local.lastPathComponent == "manifest.json" {
+				return local.deletingLastPathComponent()
+			}
+			if fileManager.fileExists(atPath: local.appendingPathComponent("manifest.json").path) {
+				return local
+			}
+		}
+		return nil
+	}
+
+	static func normalizedHubRepoID(_ raw: String) -> String {
+		let trimmed: String = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+		if let url = URL(string: trimmed),
+		   let host = url.host?.lowercased(),
+		   host.contains("huggingface.co") {
+			let parts: [String] = url.path.split(separator: "/").map(String.init)
+			if parts.count >= 2 {
+				return "\(parts[0])/\(parts[1])"
+			}
+		}
+		return trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+	}
 }
 
 public enum MoebiusError: Error, LocalizedError {
 	case modelNotFound(String, [String])
 	case unsupportedRuntime(String)
 	case invalidInput(String)
+	case downloadFailed(String)
 
 	public var errorDescription: String? {
 		switch self {
@@ -399,6 +591,8 @@ public enum MoebiusError: Error, LocalizedError {
 			return message
 		case .invalidInput(let message):
 			return message
+		case .downloadFailed(let message):
+			return "Download failed: \(message)"
 		}
 	}
 }

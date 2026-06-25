@@ -7,12 +7,50 @@ import MLXNN
 import MoebiusMLX
 
 @main
-struct MoebiusCLI: ParsableCommand {
+struct MoebiusCLI: AsyncParsableCommand {
 	static let configuration: CommandConfiguration = CommandConfiguration(
 		commandName: "moebius-mlx",
 		abstract: "Run and inspect Moebius MLX image inpainting models.",
-		subcommands: [Inspect.self, ExportQuantized.self, VAESmoke.self, UNetSmoke.self, ImageSmoke.self, CompareImage.self, BenchmarkImage.self, BenchmarkFixture.self, UNetDebug.self, VerifyFixture.self]
+		subcommands: [Inspect.self, DownloadModel.self, ExportQuantized.self, VAESmoke.self, UNetSmoke.self, ImageSmoke.self, GenerateImage.self, CompareImage.self, BenchmarkImage.self, BenchmarkFixture.self, UNetDebug.self, VerifyFixture.self]
 	)
+}
+
+struct DownloadModel: AsyncParsableCommand {
+	static let configuration: CommandConfiguration = CommandConfiguration(
+		commandName: "download",
+		abstract: "Download a Moebius MLX model from Hugging Face without loading it."
+	)
+
+	@Argument(help: "Model variant, Hugging Face repo ID, Hugging Face URL, or local path.")
+	var source: String
+
+	@Option(help: "Hub revision.")
+	var revision: String = MoebiusModelResolver.defaultHubRevision
+
+	@Option(help: "Hugging Face token for private/gated repos.")
+	var hfToken: String?
+
+	@Option(help: "Optional materialized snapshot download base directory.")
+	var downloadBase: String?
+
+	func run() async throws {
+		let base: URL? = self.downloadBase.map { URL(fileURLWithPath: $0, isDirectory: true) }
+		let directory: URL = try await MoebiusModelResolver.resolveOrDownload(
+			source: self.source,
+			revision: self.revision,
+			hfToken: self.hfToken,
+			downloadBase: base,
+			progress: { message in
+				print(message)
+			},
+			onDownloadProgress: { progress in
+				let percent: Double = progress.fractionCompleted * 100
+				let speed: String = progress.bytesPerSecond.map { "\(String(format: "%.2f", $0 / 1_000_000)) MB/s" } ?? "-"
+				print("\(String(format: "%.1f", percent))% \(progress.completedUnitCount)/\(progress.totalUnitCount) speed=\(speed)")
+			}
+		)
+		print("directory: \(directory.path)")
+	}
 }
 
 struct Inspect: ParsableCommand {
@@ -386,6 +424,64 @@ struct ImageSmoke: ParsableCommand {
 	}
 }
 
+struct GenerateImage: ParsableCommand {
+	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run one image through a converted model and write a PNG.")
+
+	@Argument(help: "Converted model variant name or directory.")
+	var model: String
+
+	@Option(help: "Input RGB image path.")
+	var image: String
+
+	@Option(help: "Input mask path. White pixels are inpainted.")
+	var mask: String
+
+	@Option(help: "Output PNG path.")
+	var output: String
+
+	@Option(help: "Denoising steps.")
+	var steps: Int = 20
+
+	@Option(help: "Random seed for the initial latent noise.")
+	var seed: UInt64 = 0
+
+	func run() throws {
+		let directory: URL = try Self.resolveModelDirectory(self.model)
+		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
+		let pipeline: MoebiusPipeline = MoebiusPipeline(model: loaded)
+		let sample: SyntheticImageSample = try ImageFileSampleLoader.load(imagePath: self.image, maskPath: self.mask)
+		let input: MoebiusImageInput = MoebiusImageInput(imageNHWC: sample.image, maskNHWC: sample.mask)
+		let options: MoebiusGenerationOptions = MoebiusGenerationOptions(
+			steps: self.steps,
+			guidanceScale: 2,
+			seed: self.seed,
+			strength: 0.99,
+			pasteBack: true
+		)
+		let startedAt: Date = Date()
+		let values: [Float] = try pipeline.runImageRGBFloats(input: input, options: options)
+		let duration: TimeInterval = Date().timeIntervalSince(startedAt)
+		let outputURL: URL = URL(fileURLWithPath: self.output)
+		try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+		try writeRGBPNG(values: values, url: outputURL)
+		let sizes: MoebiusModelDeploymentInfo = try MoebiusModelDeploymentInfo(directory: directory, manifest: loaded.manifest)
+		print("model: \(loaded.manifest.modelName)-\(loaded.manifest.precision.rawValue)")
+		print("steps: \(self.steps)")
+		print("seed: \(self.seed)")
+		print("seconds: \(String(format: "%.3f", duration))")
+		print("model_mb_total: \(String(format: "%.2f", sizes.totalMB))")
+		print("output: \(outputURL.path)")
+	}
+
+	private static func resolveModelDirectory(_ model: String) throws -> URL {
+		let local: URL = URL(fileURLWithPath: model, isDirectory: true)
+		if FileManager.default.fileExists(atPath: local.path) {
+			return local
+		}
+		return try MoebiusModelResolver.resolve(name: model)
+	}
+}
+
 struct CompareImage: ParsableCommand {
 	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run the synthetic image sample across multiple precision variants and compare outputs.")
 
@@ -465,6 +561,9 @@ struct BenchmarkImage: ParsableCommand {
 	@Option(help: "Denoising steps.")
 	var steps: Int = 2
 
+	@Option(help: "Random seed for the initial latent noise.")
+	var seed: UInt64 = 7
+
 	@Option(help: "Reference label printed in the report.")
 	var referenceName: String = "reference"
 
@@ -477,6 +576,9 @@ struct BenchmarkImage: ParsableCommand {
 	@Option(help: "Optional real mask image path. White pixels are inpainted. Requires --image.")
 	var mask: String?
 
+	@Option(help: "Optional directory where reference and candidate PNG outputs are written.")
+	var outputDir: String?
+
 	func run() throws {
 		let benchmarkSamples: [BenchmarkImageSample] = try Self.benchmarkSamples(samples: self.samples, image: self.image, mask: self.mask)
 		let referenceDirectory: URL = try Self.resolveModelDirectory(self.referenceModel)
@@ -485,14 +587,14 @@ struct BenchmarkImage: ParsableCommand {
 		let referenceStartedAt: Date = Date()
 		let referenceLoaded: MoebiusModel = try MoebiusModel.load(from: referenceDirectory)
 		let referenceLoadDuration: TimeInterval = Date().timeIntervalSince(referenceStartedAt)
-		let referenceValues: [Float] = try Self.runImages(model: referenceLoaded, samples: benchmarkSamples, steps: self.steps)
+		let referenceValues: [Float] = try Self.runImages(model: referenceLoaded, samples: benchmarkSamples, steps: self.steps, seed: self.seed)
 		let referenceTotalDuration: TimeInterval = Date().timeIntervalSince(referenceStartedAt)
 
 		let candidateStartedAt: Date = Date()
 		let candidateLoaded: MoebiusModel = try MoebiusModel.load(from: candidateDirectory)
 		let candidateLoadDuration: TimeInterval = Date().timeIntervalSince(candidateStartedAt)
 		let inferenceStartedAt: Date = Date()
-		let candidateValues: [Float] = try Self.runImages(model: candidateLoaded, samples: benchmarkSamples, steps: self.steps)
+		let candidateValues: [Float] = try Self.runImages(model: candidateLoaded, samples: benchmarkSamples, steps: self.steps, seed: self.seed)
 		let inferenceDuration: TimeInterval = Date().timeIntervalSince(inferenceStartedAt)
 		let candidateTotalDuration: TimeInterval = Date().timeIntervalSince(candidateStartedAt)
 
@@ -504,6 +606,7 @@ struct BenchmarkImage: ParsableCommand {
 		print("reference: \(self.referenceName)")
 		print("reference_model: \(referenceLoaded.manifest.modelName)-\(referenceLoaded.manifest.precision.rawValue)")
 		print("steps: \(self.steps)")
+		print("seed: \(self.seed)")
 		print("samples: \(benchmarkSamples.map(\.name).joined(separator: ","))")
 		print("sample_count: \(benchmarkSamples.count)")
 		print("reference_load_seconds: \(String(format: "%.3f", referenceLoadDuration))")
@@ -525,6 +628,24 @@ struct BenchmarkImage: ParsableCommand {
 		print("p99_abs: \(diff.p99Abs)")
 		print("psnr_db: \(String(format: "%.3f", diff.psnrDB))")
 		print("cosine_similarity: \(String(format: "%.8f", diff.cosineSimilarity))")
+
+		if let outputDir {
+			let outputURL: URL = URL(fileURLWithPath: outputDir, isDirectory: true)
+			try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+			try Self.writeImages(
+				values: referenceValues,
+				samples: benchmarkSamples,
+				prefix: "reference-\(Self.safeFilename(self.referenceName))",
+				outputDirectory: outputURL
+			)
+			try Self.writeImages(
+				values: candidateValues,
+				samples: benchmarkSamples,
+				prefix: "candidate-\(Self.safeFilename(self.model))",
+				outputDirectory: outputURL
+			)
+			print("output_dir: \(outputURL.path)")
+		}
 	}
 
 	private static func resolveModelDirectory(_ model: String) throws -> URL {
@@ -549,7 +670,7 @@ struct BenchmarkImage: ParsableCommand {
 		}
 	}
 
-	private static func runImages(model: MoebiusModel, samples: [BenchmarkImageSample], steps: Int) throws -> [Float] {
+	private static func runImages(model: MoebiusModel, samples: [BenchmarkImageSample], steps: Int, seed: UInt64) throws -> [Float] {
 		let pipeline: MoebiusPipeline = MoebiusPipeline(model: model)
 		var values: [Float] = []
 		values.reserveCapacity(samples.count * MoebiusImageTensors.imageSize * MoebiusImageTensors.imageSize * 3)
@@ -558,13 +679,67 @@ struct BenchmarkImage: ParsableCommand {
 			let options: MoebiusGenerationOptions = MoebiusGenerationOptions(
 				steps: steps,
 				guidanceScale: 2,
-				seed: 7,
+				seed: seed,
 				strength: 0.99,
 				pasteBack: true
 			)
 			values.append(contentsOf: try pipeline.runImageRGBFloats(input: input, options: options))
 		}
 		return values
+	}
+
+	private static func writeImages(values: [Float], samples: [BenchmarkImageSample], prefix: String, outputDirectory: URL) throws {
+		let sampleValueCount: Int = MoebiusImageTensors.imageSize * MoebiusImageTensors.imageSize * 3
+		guard values.count == samples.count * sampleValueCount else {
+			throw ValidationError("Unexpected image tensor count \(values.count), expected \(samples.count * sampleValueCount).")
+		}
+		for index in samples.indices {
+			let start: Int = index * sampleValueCount
+			let end: Int = start + sampleValueCount
+			let sampleValues: ArraySlice<Float> = values[start ..< end]
+			let filename: String = "\(prefix)-\(Self.safeFilename(samples[index].name)).png"
+			try Self.writePNG(values: sampleValues, url: outputDirectory.appendingPathComponent(filename))
+		}
+	}
+
+	private static func writePNG(values: ArraySlice<Float>, url: URL) throws {
+		let size: Int = MoebiusImageTensors.imageSize
+		var bytes: [UInt8] = Array(repeating: 255, count: size * size * 4)
+		for pixel in 0 ..< (size * size) {
+			for channel in 0 ..< 3 {
+				let value: Float = values[values.startIndex + (pixel * 3) + channel]
+				let scaled: Float = min(max(value, 0), 1) * 255
+				bytes[(pixel * 4) + channel] = UInt8(scaled.rounded())
+			}
+		}
+		let colorSpace: CGColorSpace = CGColorSpaceCreateDeviceRGB()
+		let bitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedLast.rawValue
+		guard let context = CGContext(
+			data: &bytes,
+			width: size,
+			height: size,
+			bitsPerComponent: 8,
+			bytesPerRow: size * 4,
+			space: colorSpace,
+			bitmapInfo: bitmapInfo
+		), let image = context.makeImage() else {
+			throw ValidationError("Unable to create PNG image.")
+		}
+		guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+			throw ValidationError("Unable to create PNG destination: \(url.path)")
+		}
+		CGImageDestinationAddImage(destination, image, nil)
+		guard CGImageDestinationFinalize(destination) else {
+			throw ValidationError("Unable to write PNG: \(url.path)")
+		}
+	}
+
+	private static func safeFilename(_ value: String) -> String {
+		let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+		let scalars = value.unicodeScalars.map { scalar in
+			allowed.contains(scalar) ? Character(scalar) : "-"
+		}
+		return String(scalars)
 	}
 }
 
@@ -939,6 +1114,41 @@ func nchwToNHWC(_ values: [Float], height: Int, width: Int, channels: Int) -> [F
 		}
 	}
 	return output
+}
+
+func writeRGBPNG(values: [Float], url: URL) throws {
+	let size: Int = MoebiusImageTensors.imageSize
+	guard values.count == size * size * 3 else {
+		throw ValidationError("Unexpected RGB image value count \(values.count), expected \(size * size * 3).")
+	}
+	var bytes: [UInt8] = Array(repeating: 255, count: size * size * 4)
+	for pixel in 0 ..< (size * size) {
+		for channel in 0 ..< 3 {
+			let value: Float = values[(pixel * 3) + channel]
+			let scaled: Float = min(max(value, 0), 1) * 255
+			bytes[(pixel * 4) + channel] = UInt8(scaled.rounded())
+		}
+	}
+	let colorSpace: CGColorSpace = CGColorSpaceCreateDeviceRGB()
+	let bitmapInfo: UInt32 = CGImageAlphaInfo.premultipliedLast.rawValue
+	guard let context = CGContext(
+		data: &bytes,
+		width: size,
+		height: size,
+		bitsPerComponent: 8,
+		bytesPerRow: size * 4,
+		space: colorSpace,
+		bitmapInfo: bitmapInfo
+	), let image = context.makeImage() else {
+		throw ValidationError("Unable to create PNG image.")
+	}
+	guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+		throw ValidationError("Unable to create PNG destination: \(url.path)")
+	}
+	CGImageDestinationAddImage(destination, image, nil)
+	guard CGImageDestinationFinalize(destination) else {
+		throw ValidationError("Unable to write PNG: \(url.path)")
+	}
 }
 
 struct SyntheticImageSample {

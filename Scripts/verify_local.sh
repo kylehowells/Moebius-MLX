@@ -317,11 +317,22 @@ if ! Scripts/run_device_autorun.sh --help | grep -q -- '--poll-seconds'; then
 	printf 'run_device_autorun.sh help should document --poll-seconds\n' >&2
 	exit 1
 fi
-device_compare_plan="$(Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 30 --poll-seconds 3 --dry-run)"
+if ! Scripts/run_device_autorun.sh --help | grep -q -- '--autorun-timeout-seconds'; then
+	printf 'run_device_autorun.sh help should document --autorun-timeout-seconds\n' >&2
+	exit 1
+fi
+if ! Scripts/run_device_autorun.sh --help | grep -q -- '--launch-wait-seconds'; then
+	printf 'run_device_autorun.sh help should document --launch-wait-seconds\n' >&2
+	exit 1
+fi
+device_compare_plan="$(Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 30 --poll-seconds 3 --autorun-timeout-seconds 120 --launch-wait-seconds 90 --dry-run)"
 for expected in \
 	'compare: 1' \
 	'wait_seconds: 30' \
 	'poll_seconds: 3' \
+	'autorun_timeout_seconds: 120' \
+	'launch_wait_seconds: 90' \
+	'xcodebuild_destination: generic/platform=iOS' \
 	'ft_places2-f32' \
 	'ft_places2-f16' \
 	'ft_places2-q8' \
@@ -330,6 +341,7 @@ for expected in \
 	'ft_places2-mxfp4' \
 	'ft_places2-q4-ff-spatial-vae' \
 	'ft_places2-q4-all-spatial-vae' \
+	'"MOEBIUS_DEMO_AUTORUN_RUN_ID":"' \
 	'"MOEBIUS_DEMO_COMPARE":"1"'
 do
 	if ! printf '%s\n' "$device_compare_plan" | grep -q "$expected"; then
@@ -340,6 +352,18 @@ done
 
 log "Running Swift tests"
 swift test
+
+log "Running Catalyst demo unit tests"
+demo_unit_test_derived_data="/tmp/moebius-demo-unit-tests-derived-data"
+rm -rf "$demo_unit_test_derived_data"
+xcodebuild \
+	-project Demo/MoebiusDemo/MoebiusDemo.xcodeproj \
+	-scheme MoebiusDemo \
+	-configuration Debug \
+	-destination 'platform=macOS,variant=Mac Catalyst' \
+	-derivedDataPath "$demo_unit_test_derived_data" \
+	test
+printf 'Catalyst demo unit tests passed.\n'
 
 if [ "$RUN_ALL_INSPECTS" -eq 1 ]; then
 	log "Inspecting all 24 variants"

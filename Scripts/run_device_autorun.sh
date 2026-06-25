@@ -9,10 +9,13 @@ PRECISION="${MOEBIUS_DEMO_PRECISION:-q4}"
 STEPS="${MOEBIUS_DEMO_STEPS:-2}"
 VARIANT="${MODEL}-${PRECISION}"
 DERIVED_DATA="${DERIVED_DATA:-/tmp/MoebiusDemoDeviceDerivedData}"
+XCODEBUILD_DESTINATION="${XCODEBUILD_DESTINATION:-generic/platform=iOS}"
 STAGE_DIR="${STAGE_DIR:-/tmp/moebius-ipad-autorun-stage}"
 STATUS_OUT="${STATUS_OUT:-/tmp/moebius-ipad-autorun-status.txt}"
 WAIT_SECONDS=0
 POLL_SECONDS=5
+AUTORUN_TIMEOUT_SECONDS=900
+LAUNCH_WAIT_SECONDS=""
 SKIP_BUILD=0
 SKIP_INSTALL=0
 SKIP_COPY=0
@@ -39,10 +42,19 @@ Options:
                     for --model, including ft_places2 q4 size candidates.
   --steps N          Denoising steps. Default: $STEPS
   --derived-data DIR DerivedData path. Default: $DERIVED_DATA
+  --xcodebuild-destination DEST
+                    xcodebuild destination. Default: $XCODEBUILD_DESTINATION
+                    CoreDevice ids are still used for install/copy/launch.
   --stage-dir DIR    Temporary staging path. Default: $STAGE_DIR
   --status-out PATH  Host path for copied status. Default: $STATUS_OUT
   --wait-seconds N   Wait up to N seconds for the device. Default: $WAIT_SECONDS
-  --poll-seconds N   Device wait poll interval. Default: $POLL_SECONDS
+  --poll-seconds N   Device/status poll interval. Default: $POLL_SECONDS
+  --autorun-timeout-seconds N
+                    Wait up to N seconds for done/error autorun status after
+                    launch. Default: $AUTORUN_TIMEOUT_SECONDS
+  --launch-wait-seconds N
+                    Retry launch for N seconds if the device is locked.
+                    Default: same as --wait-seconds
   --skip-build       Reuse existing device build.
   --skip-install     Reuse installed app.
   --skip-copy        Reuse model already copied to app container.
@@ -87,6 +99,10 @@ while [ "$#" -gt 0 ]; do
 			DERIVED_DATA="$2"
 			shift 2
 			;;
+		--xcodebuild-destination)
+			XCODEBUILD_DESTINATION="$2"
+			shift 2
+			;;
 		--stage-dir)
 			STAGE_DIR="$2"
 			shift 2
@@ -101,6 +117,14 @@ while [ "$#" -gt 0 ]; do
 			;;
 		--poll-seconds)
 			POLL_SECONDS="$2"
+			shift 2
+			;;
+		--autorun-timeout-seconds)
+			AUTORUN_TIMEOUT_SECONDS="$2"
+			shift 2
+			;;
+		--launch-wait-seconds)
+			LAUNCH_WAIT_SECONDS="$2"
 			shift 2
 			;;
 		--skip-build)
@@ -147,6 +171,21 @@ if [ "$POLL_SECONDS" -eq 0 ]; then
 	printf -- '--poll-seconds must be greater than zero.\n' >&2
 	exit 2
 fi
+case "$AUTORUN_TIMEOUT_SECONDS" in
+	''|*[!0-9]*)
+		printf -- '--autorun-timeout-seconds must be a non-negative integer: %s\n' "$AUTORUN_TIMEOUT_SECONDS" >&2
+		exit 2
+		;;
+esac
+if [ -z "$LAUNCH_WAIT_SECONDS" ]; then
+	LAUNCH_WAIT_SECONDS="$WAIT_SECONDS"
+fi
+case "$LAUNCH_WAIT_SECONDS" in
+	''|*[!0-9]*)
+		printf -- '--launch-wait-seconds must be a non-negative integer: %s\n' "$LAUNCH_WAIT_SECONDS" >&2
+		exit 2
+		;;
+esac
 
 if [ "$VARIANT_WAS_EXPLICIT" -eq 1 ]; then
 	case "$VARIANT" in
@@ -194,7 +233,8 @@ else
 	stage_variants=("$VARIANT")
 fi
 
-launch_environment="{\"MOEBIUS_DEMO_AUTORUN\":\"1\",\"MOEBIUS_DEMO_COMPARE\":\"$COMPARE\",\"MOEBIUS_DEMO_MODEL\":\"$MODEL\",\"MOEBIUS_DEMO_PRECISION\":\"$DEMO_PRECISION\",\"MOEBIUS_DEMO_STEPS\":\"$STEPS\"}"
+autorun_id="$(date +%Y%m%d%H%M%S)-$$"
+launch_environment="{\"MOEBIUS_DEMO_AUTORUN\":\"1\",\"MOEBIUS_DEMO_AUTORUN_RUN_ID\":\"$autorun_id\",\"MOEBIUS_DEMO_COMPARE\":\"$COMPARE\",\"MOEBIUS_DEMO_MODEL\":\"$MODEL\",\"MOEBIUS_DEMO_PRECISION\":\"$DEMO_PRECISION\",\"MOEBIUS_DEMO_STEPS\":\"$STEPS\"}"
 
 if [ "$DRY_RUN" -eq 1 ]; then
 	printf 'device: %s\n' "$DEVICE_ID"
@@ -205,10 +245,14 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	printf 'compare: %s\n' "$COMPARE"
 	printf 'steps: %s\n' "$STEPS"
 	printf 'derived_data: %s\n' "$DERIVED_DATA"
+	printf 'xcodebuild_destination: %s\n' "$XCODEBUILD_DESTINATION"
 	printf 'stage_dir: %s\n' "$STAGE_DIR"
 	printf 'status_out: %s\n' "$STATUS_OUT"
 	printf 'wait_seconds: %s\n' "$WAIT_SECONDS"
 	printf 'poll_seconds: %s\n' "$POLL_SECONDS"
+	printf 'autorun_timeout_seconds: %s\n' "$AUTORUN_TIMEOUT_SECONDS"
+	printf 'launch_wait_seconds: %s\n' "$LAUNCH_WAIT_SECONDS"
+	printf 'autorun_id: %s\n' "$autorun_id"
 	printf 'stage_variants:\n'
 	for stage_variant in "${stage_variants[@]}"; do
 		printf '  %s\n' "$stage_variant"
@@ -247,7 +291,7 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
 	xcodebuild \
 		-project "$ROOT_DIR/Demo/MoebiusDemo/MoebiusDemo.xcodeproj" \
 		-scheme MoebiusDemo \
-		-destination "platform=iOS,id=$DEVICE_ID" \
+		-destination "$XCODEBUILD_DESTINATION" \
 		-derivedDataPath "$DERIVED_DATA" \
 		build
 fi
@@ -277,17 +321,61 @@ if [ "$SKIP_COPY" -eq 0 ]; then
 		--remove-existing-content false
 fi
 
-xcrun devicectl device process launch \
-	--device "$DEVICE_ID" \
-	--terminate-existing \
-	--environment-variables "$launch_environment" \
-	"$BUNDLE_ID"
+launch_output="$(mktemp /tmp/moebius-device-launch.XXXXXX)"
+deadline="$(( $(date +%s) + LAUNCH_WAIT_SECONDS ))"
+while :; do
+	if xcrun devicectl device process launch \
+		--device "$DEVICE_ID" \
+		--terminate-existing \
+		--environment-variables "$launch_environment" \
+		"$BUNDLE_ID" >"$launch_output" 2>&1; then
+		cat "$launch_output"
+		rm -f "$launch_output"
+		break
+	fi
+	if grep -qi 'Locked' "$launch_output" && [ "$LAUNCH_WAIT_SECONDS" -gt 0 ] && [ "$(date +%s)" -lt "$deadline" ]; then
+		printf 'Device is locked; waiting before retrying launch.\n' >&2
+		sleep "$POLL_SECONDS"
+		continue
+	fi
+	cat "$launch_output" >&2
+	rm -f "$launch_output"
+	exit 1
+done
 
-xcrun devicectl device copy from \
-	--device "$DEVICE_ID" \
-	--source Documents/moebius-demo-autorun-status.txt \
-	--destination "$STATUS_OUT" \
-	--domain-type appDataContainer \
-	--domain-identifier "$BUNDLE_ID"
+rm -f "$STATUS_OUT"
+status=""
+deadline="$(( $(date +%s) + AUTORUN_TIMEOUT_SECONDS ))"
+while :; do
+	if xcrun devicectl device copy from \
+		--device "$DEVICE_ID" \
+		--source Documents/moebius-demo-autorun-status.txt \
+		--destination "$STATUS_OUT" \
+		--domain-type appDataContainer \
+		--domain-identifier "$BUNDLE_ID" >/dev/null 2>&1; then
+		status="$(cat "$STATUS_OUT")"
+		run_prefix="run_id=$autorun_id "
+		if [[ "$status" == "$run_prefix"* ]]; then
+			status_body="${status#"$run_prefix"}"
+			case "$status_body" in
+				done*)
+					break
+					;;
+				error*)
+					printf 'Device autorun failed: %s\n' "$status" >&2
+					exit 1
+					;;
+			esac
+		fi
+	fi
+	if [ "$AUTORUN_TIMEOUT_SECONDS" -eq 0 ] || [ "$(date +%s)" -ge "$deadline" ]; then
+		printf 'Timed out waiting for autorun status for run_id=%s.\n' "$autorun_id" >&2
+		if [ -n "$status" ]; then
+			printf 'Latest copied status: %s\n' "$status" >&2
+		fi
+		exit 1
+	fi
+	sleep "$POLL_SECONDS"
+done
 
 cat "$STATUS_OUT"

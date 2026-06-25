@@ -6,31 +6,76 @@
 //
 
 import XCTest
+import UIKit
+import MoebiusMLX
 @testable import MoebiusDemo
 
 final class MoebiusDemoTests: XCTestCase {
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-    }
+	@MainActor
+	func testImportedImageStartsWithEmptyEditableMask() throws {
+		let image: UIImage = Self.makeTopBottomImage()
+		let sample: DemoFixture.Sample = try XCTUnwrap(DemoFixture.makeSample(from: image))
+		let expectedPixelCount: Int = MoebiusImageTensors.imageSize * MoebiusImageTensors.imageSize
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+		XCTAssertEqual(sample.mask.count, expectedPixelCount)
+		XCTAssertTrue(sample.mask.allSatisfy { value in
+			value == 0
+		})
+	}
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
-    }
+	@MainActor
+	func testImportedImageKeepsTopBottomOrientation() throws {
+		let image: UIImage = Self.makeTopBottomImage()
+		let sample: DemoFixture.Sample = try XCTUnwrap(DemoFixture.makeSample(from: image))
+		let size: Int = MoebiusImageTensors.imageSize
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
-        }
-    }
+		let topPixel: Int = ((size / 8) * size) + (size / 2)
+		let bottomPixel: Int = (((size * 7) / 8) * size) + (size / 2)
+
+		XCTAssertGreaterThan(sample.image[(topPixel * 3) + 0], 0.8)
+		XCTAssertLessThan(sample.image[(topPixel * 3) + 2], -0.8)
+		XCTAssertLessThan(sample.image[(bottomPixel * 3) + 0], -0.8)
+		XCTAssertGreaterThan(sample.image[(bottomPixel * 3) + 2], 0.8)
+	}
+
+	private static func makeTopBottomImage() -> UIImage {
+		let width: Int = 16
+		let height: Int = 16
+		var rgba: [UInt8] = Array(repeating: 255, count: width * height * 4)
+		for y in 0 ..< height {
+			for x in 0 ..< width {
+				let offset: Int = ((y * width) + x) * 4
+				if y < height / 2 {
+					rgba[offset + 0] = 255
+					rgba[offset + 1] = 0
+					rgba[offset + 2] = 0
+				}
+				else {
+					rgba[offset + 0] = 0
+					rgba[offset + 1] = 0
+					rgba[offset + 2] = 255
+				}
+			}
+		}
+
+		let data: Data = Data(rgba)
+		let provider: CGDataProvider = CGDataProvider(data: data as CFData)!
+		let colorSpace: CGColorSpace = CGColorSpaceCreateDeviceRGB()
+		let image: CGImage = CGImage(
+			width: width,
+			height: height,
+			bitsPerComponent: 8,
+			bitsPerPixel: 32,
+			bytesPerRow: width * 4,
+			space: colorSpace,
+			bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+			provider: provider,
+			decode: nil,
+			shouldInterpolate: false,
+			intent: .defaultIntent
+		)!
+		return UIImage(cgImage: image)
+	}
 
 }

@@ -9,33 +9,30 @@ import XCTest
 
 final class MoebiusDemoUITests: XCTestCase {
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+	override func setUpWithError() throws {
+		self.continueAfterFailure = false
+	}
 
-        // In UI tests it is usually best to stop immediately when a failure occurs.
-        continueAfterFailure = false
+	@MainActor
+	func testMainScreenLabelsExplainControls() throws {
+		let app: XCUIApplication = XCUIApplication()
+		app.launchEnvironment["MOEBIUS_DEMO_DISABLE_AUTORUN"] = "1"
+		app.launch()
 
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
-
-    @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
-
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-    }
-
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
-    }
+		XCTAssertTrue(app.staticTexts["Model checkpoint"].waitForExistence(timeout: 5))
+		XCTAssertTrue(app.staticTexts["Model precision"].exists)
+		XCTAssertTrue(app.staticTexts["Sampling controls"].exists)
+		XCTAssertTrue(app.staticTexts["Mask drawing controls"].exists)
+		XCTAssertTrue(app.staticTexts["Image and execution controls"].exists)
+		XCTAssertTrue(app.staticTexts["Denoising steps: 8"].exists)
+		XCTAssertTrue(app.staticTexts["Guidance scale: 2.0"].exists)
+		XCTAssertTrue(app.staticTexts["Random seed: 7"].exists)
+		XCTAssertTrue(app.staticTexts["Brush size: 32 px"].exists)
+		XCTAssertTrue(app.staticTexts["Paint mask"].exists)
+		XCTAssertTrue(app.buttons["Load image"].exists)
+		XCTAssertTrue(app.buttons["Use sample"].exists)
+		XCTAssertTrue(app.buttons["Clear mask"].exists)
+		XCTAssertTrue(app.buttons["Run sample"].exists)
+		XCTAssertTrue(app.buttons["Compare quants"].exists)
+	}
 }

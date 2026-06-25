@@ -116,6 +116,15 @@ See `Docs/API.md` for the command-level CLI reference and focused Swift API note
 /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX
 ```
 
+For distributed app usage, the resolver also has an async `resolveOrDownload(...)` path, wrapped by `MoebiusModel.fromPretrained(...)`. It accepts a local directory, a path to `manifest.json`, a known variant name, a Hugging Face repo id, or a Hugging Face URL. Known variants map to one Hub repo per family/precision, for example:
+
+```text
+ft_places2-q4 -> iky1e/moebius-ft-places2-mlx-q4
+ft_ffhq-f16 -> iky1e/moebius-ft-ffhq-mlx-f16
+```
+
+The downloader exposes `MoebiusDownloadProgress` so Catalyst/iPad apps can show progress instead of hiding the transfer inside the loader. On macOS the default materialized snapshot base follows Hugging Face cache conventions and lands under `~/.cache/huggingface/hub/moebius-mlx` unless `HF_HUB_CACHE` or `HF_HOME` is set. On iOS the default is app-specific Application Support under `Moebius-MLX/HuggingFace`. Apps can pass `downloadBase:` to use a custom location, or bypass Hub entirely by calling `MoebiusModel.load(from:)` with their own downloaded or bundled model directory.
+
 For iPad packaging, the expected model layout is one variant directory per model, for example `Moebius-MLX/ft_places2-f16/manifest.json`, placed in the app bundle, copied into Application Support, or imported into Documents. The resolver also accepts `Documents/<variant>/manifest.json`, which is useful because `devicectl device copy to --destination Documents` can copy the staged variant directories directly under Documents. The demo app enables `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace`, so a physical iPad can receive staged model folders through Finder file sharing.
 
 `Scripts/stage_models_for_ios.sh` now stages runtime packages rather than raw source directories. For quantized variants it copies only:
@@ -191,14 +200,17 @@ It is a UIKit app with:
 - a Launch Screen storyboard only
 - segmented controls for model family and precision
 - a stepper for 2-24 denoising steps
-- synthetic sample image, imported-image support, mask preview, and output preview
-- Load image and Reset sample controls
+- synthetic sample image, imported-image support, editable mask overlay, and output preview
+- Load image, Use sample, and Clear mask controls
+- labeled sections for model fine-tune, precision/quant choice, generation settings, mask tools, and image/run actions
+- paint/erase mask editing directly over the source image, with a brush-size slider
+- generation controls for steps, guidance, seed, and paste-back
 - a run-history comparison panel showing recent variants, status, step count, runtime, output mean, manifest-selected deployment MB, and observed resident memory MB
 - a run button that calls the same `MoebiusPipeline.runImageRGBFloats` API as the CLI image smoke path
 - a Compare quants button that runs f32, f16, q8, q4, mxfp8, and mxfp4 for the selected model family on the same sample
 - additional `ft_places2` precision options for the experimental `q4 322M` and `q4 200M` candidates, so that family compares eight visible variants
 - comparison mode records per-variant errors and continues, so an iPad staged with only a subset of variants can still compare the available models
-- paste-back enabled so unmasked pixels come from the input image
+- a paste-back toggle so unmasked pixels can come from the input image
 - an environment-driven autorun path for repeatable Catalyst verification:
   - `MOEBIUS_DEMO_AUTORUN=1`
   - `MOEBIUS_DEMO_COMPARE=1` for the visible-variant comparison path
@@ -211,7 +223,7 @@ If `MOEBIUS_DEMO_AUTORUN=1` is set and `MOEBIUS_DEMO_AUTORUN_STATUS` is not set,
 
 The app builds for both Mac Catalyst and iOS Simulator. Catalyst is currently the easiest local test target.
 
-Imported images are loaded through a document picker, center-cropped/resized to the 512x512 tensor shape, normalized to `[-1, 1]`, and paired with the same fixed circular inpaint mask used by the synthetic sample. Mask drawing/import is intentionally not part of this pass yet.
+Imported images are loaded through a document picker, center-cropped/resized to the 512x512 tensor shape, normalized to `[-1, 1]`, and paired with an empty editable mask. The user paints the inpaint region directly over the image in the demo. The built-in synthetic sample still starts with a circular mask so the demo has a one-click runnable example.
 
 ## Verification
 
@@ -258,6 +270,15 @@ Latest local verification on 2026-06-24:
 - All 24 standard converted variants loaded through `moebius-mlx inspect`: `pretrained`, `ft_places2`, `ft_celebahq`, and `ft_ffhq` across `f32`, `f16`, `q8`, `q4`, `mxfp8`, and `mxfp4`.
 - The same run passed Swift tests, f32 fixture smoke, f16/q4 image smoke, `compare-image ft_places2 --steps 2`, the f16-referenced q4 image benchmark, and trimmed staging/load checks for `ft_places2-q4` and `ft_places2-q4-all-spatial-vae`.
 - `Scripts/verify_local.sh --demo-builds` also passed on 2026-06-24, covering the Catalyst build, Catalyst autorun comparison paths, and generic iOS Simulator build.
+
+Latest continuation verification on 2026-06-25:
+
+- `Scripts/verify_local.sh` passed after the demo mask-editor and documentation updates.
+- The default local gate checked all 24 converted directories, both stable `ft_places2` q4 candidate views, all 16 quantized UNet files, checked-in benchmark report artifacts, storyboard-free `SceneDelegate` wiring, README/API/project docs, helper script syntax, Swift tests, representative model loads, f32 fixture smoke, f16/q4 image smoke, `compare-image ft_places2 --steps 2`, the f16-referenced q4 image benchmark, and trimmed staging/load checks for `ft_places2-q4` and `ft_places2-q4-all-spatial-vae`.
+- `Scripts/verify_local.sh` passed again after adding explicit demo headers/control labels and the Catalyst demo unit-test gate. That run included isolated Mac Catalyst unit tests from a clean temporary DerivedData directory, then representative model loads, MLX image smoke checks, the f16-referenced q4 benchmark, and trimmed staging/load checks for `ft_places2-q4` and `ft_places2-q4-all-spatial-vae`.
+- The generic iOS Simulator build also passed after the same demo label/layout changes:
+  `xcodebuild -project Demo/MoebiusDemo/MoebiusDemo.xcodeproj -scheme MoebiusDemo -configuration Debug -destination 'generic/platform=iOS Simulator' build`.
+- The Catalyst app was rebuilt and visually checked after the mask editor and label changes. The running app shows labeled sections for model checkpoint, model precision, sampling controls, mask drawing controls, and image/execution controls. Clear mask, paint, and erase interactions were exercised in the Catalyst window.
 
 The iPad staging helper was smoke-tested with one quantized variant and produced:
 
@@ -342,10 +363,10 @@ The helper wraps the known-good manual sequence: device build, app install, mode
 Scripts/run_device_autorun.sh --variant ft_places2-q4-all-spatial-vae
 Scripts/run_device_autorun.sh --model ft_places2 --compare
 Scripts/run_device_autorun.sh --model ft_places2 --compare --dry-run
-Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300
+Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300 --launch-wait-seconds 300 --autorun-timeout-seconds 900
 ```
 
-`--compare` stages every visible precision for the selected model. For `ft_places2`, it stages the six standard precision variants plus the `q4 322M` and `q4 200M` package-size candidates, matching the demo comparison UI. `--dry-run` prints that resolved staging list and the autorun launch environment before touching CoreDevice, which keeps the next physical-device attempt auditable while the iPad is unavailable. `--wait-seconds` can be used for the actual attempt to poll for an unlocked/connected device before build, install, copy, and launch.
+`--compare` stages every visible precision for the selected model. For `ft_places2`, it stages the six standard precision variants plus the `q4 322M` and `q4 200M` package-size candidates, matching the demo comparison UI. `--dry-run` prints that resolved staging list and the autorun launch environment before touching CoreDevice, which keeps the next physical-device attempt auditable while the iPad is unavailable. `--wait-seconds` can be used for the actual attempt to poll for a connected device before build, install, copy, and launch. `--launch-wait-seconds` retries the app launch if SpringBoard rejects it because the iPad is locked. The helper builds with `generic/platform=iOS` by default because CoreDevice ids are not the same ids shown by `xcodebuild -showdestinations`; the CoreDevice id is still used for install, model copy, launch, and status readback. After launch, the helper tags the run with `MOEBIUS_DEMO_AUTORUN_RUN_ID` and polls the app-container status file until the matching run writes `done` or `error`, bounded by `--autorun-timeout-seconds`.
 
 The latest successful provisioning attempt copied the original staged q4 package to the iPad app container and read the manifest back. A later 2026-06-24 continuation check could not launch the app because CoreDevice reported the iPad as unavailable:
 
@@ -438,13 +459,14 @@ The iPad Simulator app was also built and launched with the corrected bundle id,
 - model tabs: `ft_places2`, `ft_celebahq`, `ft_ffhq`, `pretrained`
 - precision tabs: `f32`, `f16`, `q8`, `q4`, `mxfp8`, `mxfp4`
 - `ft_places2` also adds `q4 322M` and `q4 200M` candidate precision tabs
-- `Steps: 8`
+- `Denoising steps: 8`
 - `Load image`
-- `Reset sample`
+- `Use sample`
+- `Clear mask`
 - `Run sample`
 - `Compare quants`
 - `Runs` with six comparison rows
-- `Sample`, `Mask`, and `Result` labels
+- `Sample`, `Paint mask`, and `Result` labels
 
 The simulator run path also updates the run-history panel. On iOS Simulator the single-run first row becomes:
 
@@ -810,13 +832,13 @@ Kyle‘s iPad Pro  4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1  unavailable
 The next completion command remains:
 
 ```bash
-Scripts/run_device_autorun.sh --variant ft_places2-q4 --wait-seconds 300
+Scripts/run_device_autorun.sh --variant ft_places2-q4 --wait-seconds 300 --launch-wait-seconds 300 --autorun-timeout-seconds 900
 ```
 
 For a full demo comparison run on device:
 
 ```bash
-Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300
+Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300 --launch-wait-seconds 300 --autorun-timeout-seconds 900
 ```
 
 The autorun status file now includes the fields needed to complete the evidence chain:
@@ -868,4 +890,4 @@ The current q4/mxfp4 variants are therefore not full-model q4 packages. The orig
 - Quantized variants materialize compact quantized UNet parameters. By default only supported `Linear` and `Embedding` modules are quantized. `ft_places2-q4` has additionally been re-exported with feed-forward 1x1 UNet convolutions packed, and experimental non-default artifacts also pack eligible spatial sampler 3x3 convolutions and VAE conv/linear weights; remaining 1x1 attention/resnet, depthwise, and relative-position weights are still mostly f16.
 - Catalyst demo generation has been verified through the actual view-controller autorun path. iPad Simulator UI launch is verified, but MLX Swift currently aborts during Metal stream/device initialization on iOS Simulator. The library and demo now fail gracefully there.
 - Physical iPad build, install, and model-container copy are verified. Real-device model execution and timing/memory validation still need one available unlocked-device autorun/manual run; the latest 2026-06-24 `devicectl list devices` check reported the iPad as unavailable. The demo autorun status now records timing and resident memory fields so that run can be captured from the app container status file.
-- The demo can import source images from Files, but mask editing/import is not implemented. It currently uses a fixed circular mask for both synthetic and imported samples.
+- The demo can import source images from Files and supports direct paint/erase/clear mask editing over the source image. It does not yet import an external mask image file; imported source images start with an empty mask, while the built-in sample starts with a circular mask for quick testing.

@@ -62,5 +62,12 @@ public struct MoebiusDDIMScheduler: Sendable {
 		let predX0: MLXArray = (sample - (sqrtBetaT * noise)) / sqrtAcT
 		return (sqrtAcPrev * predX0) + (sqrtOneMinusAcPrev * noise)
 	}
-}
 
+	public func addNoise(original: MLXArray, noise: MLXArray, timestep: Int) -> MLXArray {
+		let dtype: DType = original.dtype
+		let acT: Float = self.alphasCumprod[timestep]
+		let sqrtAcT: MLXArray = MLXArray(sqrt(acT)).asType(dtype)
+		let sqrtOneMinusAcT: MLXArray = MLXArray(sqrt(1.0 - acT)).asType(dtype)
+		return (sqrtAcT * original) + (sqrtOneMinusAcT * noise.asType(dtype))
+	}
+}
