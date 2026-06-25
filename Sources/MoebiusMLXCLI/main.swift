@@ -6,17 +6,21 @@ import MLX
 import MLXNN
 import MoebiusMLX
 
+// MARK: - MoebiusCLI
+
 @main
 struct MoebiusCLI: AsyncParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(
+	static let configuration: CommandConfiguration = .init(
 		commandName: "moebius-mlx",
 		abstract: "Run and inspect Moebius MLX image inpainting models.",
 		subcommands: [Inspect.self, DownloadModel.self, ExportQuantized.self, VAESmoke.self, UNetSmoke.self, ImageSmoke.self, GenerateImage.self, CompareImage.self, BenchmarkImage.self, BenchmarkFixture.self, UNetDebug.self, VerifyFixture.self]
 	)
 }
 
+// MARK: - DownloadModel
+
 struct DownloadModel: AsyncParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(
+	static let configuration: CommandConfiguration = .init(
 		commandName: "download",
 		abstract: "Download a Moebius MLX model from Hugging Face without loading it."
 	)
@@ -53,8 +57,10 @@ struct DownloadModel: AsyncParsableCommand {
 	}
 }
 
+// MARK: - Inspect
+
 struct Inspect: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Load a converted model and print manifest details.")
+	static let configuration: CommandConfiguration = .init(abstract: "Load a converted model and print manifest details.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
@@ -98,7 +104,7 @@ struct Inspect: ParsableCommand {
 	}
 
 	private func resolveModelDirectory() throws -> URL {
-		let local: URL = URL(fileURLWithPath: self.model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: self.model, isDirectory: true)
 		if FileManager.default.fileExists(atPath: local.path) {
 			return local
 		}
@@ -106,8 +112,10 @@ struct Inspect: ParsableCommand {
 	}
 }
 
+// MARK: - ExportQuantized
+
 struct ExportQuantized: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Materialize a quantized UNet safetensors file for a quantized model variant.")
+	static let configuration: CommandConfiguration = .init(abstract: "Materialize a quantized UNet safetensors file for a quantized model variant.")
 
 	@Argument(help: "Converted quantized model variant name or directory.")
 	var model: String
@@ -140,7 +148,7 @@ struct ExportQuantized: ParsableCommand {
 	var vaeDecoderFilename: String = "vae_decoder_quantized.safetensors"
 
 	func run() throws {
-		let local: URL = URL(fileURLWithPath: self.model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: self.model, isDirectory: true)
 		let directory: URL = FileManager.default.fileExists(atPath: local.path) ? local : try MoebiusModelResolver.resolve(name: self.model)
 		let manifestURL: URL = directory.appendingPathComponent("manifest.json")
 		let manifestData: Data = try Data(contentsOf: manifestURL)
@@ -254,7 +262,7 @@ struct ExportQuantized: ParsableCommand {
 			manifest.quantizedVAEConvolutionPolicy = nil
 		}
 
-		let encoder: JSONEncoder = JSONEncoder()
+		let encoder: JSONEncoder = .init()
 		encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 		let updatedManifest: Data = try encoder.encode(manifest)
 		try updatedManifest.write(to: manifestURL)
@@ -263,8 +271,10 @@ struct ExportQuantized: ParsableCommand {
 	}
 }
 
+// MARK: - VerifyFixture
+
 struct VerifyFixture: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run the zero-latent UNet fixture and optionally compare against a raw f32 reference tensor.")
+	static let configuration: CommandConfiguration = .init(abstract: "Run the zero-latent UNet fixture and optionally compare against a raw f32 reference tensor.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
@@ -276,14 +286,14 @@ struct VerifyFixture: ParsableCommand {
 	var reference: String?
 
 	func run() throws {
-		let local: URL = URL(fileURLWithPath: self.model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: self.model, isDirectory: true)
 		let directory: URL = FileManager.default.fileExists(atPath: local.path) ? local : try MoebiusModelResolver.resolve(name: self.model)
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
-		let pipeline: MoebiusPipeline = MoebiusPipeline(model: loaded)
+		let pipeline: MoebiusPipeline = .init(model: loaded)
 		let dtype: DType = loaded.manifest.precision.dtype
-		let latents: MLXArray = MLXArray.zeros([1, 64, 64, 4], dtype: dtype)
-		let mask: MLXArray = MLXArray.zeros([1, 64, 64, 1], dtype: dtype)
-		let maskedLatents: MLXArray = MLXArray.zeros([1, 64, 64, 4], dtype: dtype)
+		let latents: MLXArray = .zeros([1, 64, 64, 4], dtype: dtype)
+		let mask: MLXArray = .zeros([1, 64, 64, 1], dtype: dtype)
+		let maskedLatents: MLXArray = .zeros([1, 64, 64, 4], dtype: dtype)
 		let noise: MLXArray = try pipeline.predictNoiseCFG(
 			latents: latents,
 			mask64: mask,
@@ -293,7 +303,7 @@ struct VerifyFixture: ParsableCommand {
 		)
 		eval(noise)
 		let values: [Float] = noise.asType(.float32).asArray(Float.self)
-		let stats: TensorStats = TensorStats(values: values)
+		let stats: TensorStats = .init(values: values)
 		print("model: \(loaded.manifest.modelName)-\(loaded.manifest.precision.rawValue)")
 		print("fixture: zero-latent timestep=\(self.timestep) guidance=2.0")
 		print("shape: \(noise.shape)")
@@ -306,8 +316,9 @@ struct VerifyFixture: ParsableCommand {
 			guard referenceValues.count == values.count else {
 				throw ValidationError("Reference tensor has \(referenceValues.count) values, expected \(values.count).")
 			}
+
 			let errors: [Float] = zip(values, referenceValues).map { abs($0 - $1) }
-			let errorStats: TensorStats = TensorStats(values: errors)
+			let errorStats: TensorStats = .init(values: errors)
 			print("max_abs: \(errorStats.max)")
 			print("mean_abs: \(errorStats.mean)")
 		}
@@ -318,20 +329,23 @@ struct VerifyFixture: ParsableCommand {
 		guard data.count % MemoryLayout<Float>.stride == 0 else {
 			throw ValidationError("Reference file byte count is not divisible by 4: \(data.count).")
 		}
+
 		return data.withUnsafeBytes { bytes in
 			Array(bytes.bindMemory(to: Float.self))
 		}
 	}
 }
 
+// MARK: - VAESmoke
+
 struct VAESmoke: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run VAE encode/decode on a zero tensor and print shapes.")
+	static let configuration: CommandConfiguration = .init(abstract: "Run VAE encode/decode on a zero tensor and print shapes.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
 
 	func run() throws {
-		let local: URL = URL(fileURLWithPath: self.model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: self.model, isDirectory: true)
 		let directory: URL = FileManager.default.fileExists(atPath: local.path) ? local : try MoebiusModelResolver.resolve(name: self.model)
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
 		let image = MLXArray.zeros([1, 512, 512, 3], dtype: loaded.manifest.precision.dtype)
@@ -344,8 +358,10 @@ struct VAESmoke: ParsableCommand {
 	}
 }
 
+// MARK: - UNetSmoke
+
 struct UNetSmoke: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run one CFG UNet prediction on zero latent inputs and print the output shape.")
+	static let configuration: CommandConfiguration = .init(abstract: "Run one CFG UNet prediction on zero latent inputs and print the output shape.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
@@ -357,14 +373,14 @@ struct UNetSmoke: ParsableCommand {
 	var output: String?
 
 	func run() throws {
-		let local: URL = URL(fileURLWithPath: self.model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: self.model, isDirectory: true)
 		let directory: URL = FileManager.default.fileExists(atPath: local.path) ? local : try MoebiusModelResolver.resolve(name: self.model)
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
-		let pipeline: MoebiusPipeline = MoebiusPipeline(model: loaded)
+		let pipeline: MoebiusPipeline = .init(model: loaded)
 		let dtype: DType = loaded.manifest.precision.dtype
-		let latents: MLXArray = MLXArray.zeros([1, 64, 64, 4], dtype: dtype)
-		let mask: MLXArray = MLXArray.zeros([1, 64, 64, 1], dtype: dtype)
-		let maskedLatents: MLXArray = MLXArray.zeros([1, 64, 64, 4], dtype: dtype)
+		let latents: MLXArray = .zeros([1, 64, 64, 4], dtype: dtype)
+		let mask: MLXArray = .zeros([1, 64, 64, 1], dtype: dtype)
+		let maskedLatents: MLXArray = .zeros([1, 64, 64, 4], dtype: dtype)
 		let noise: MLXArray = try pipeline.predictNoiseCFG(
 			latents: latents,
 			mask64: mask,
@@ -384,8 +400,10 @@ struct UNetSmoke: ParsableCommand {
 	}
 }
 
+// MARK: - ImageSmoke
+
 struct ImageSmoke: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run the full image pipeline on a synthetic sample and print output stats.")
+	static let configuration: CommandConfiguration = .init(abstract: "Run the full image pipeline on a synthetic sample and print output stats.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
@@ -394,13 +412,13 @@ struct ImageSmoke: ParsableCommand {
 	var steps: Int = 2
 
 	func run() throws {
-		let local: URL = URL(fileURLWithPath: self.model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: self.model, isDirectory: true)
 		let directory: URL = FileManager.default.fileExists(atPath: local.path) ? local : try MoebiusModelResolver.resolve(name: self.model)
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
-		let pipeline: MoebiusPipeline = MoebiusPipeline(model: loaded)
-		let sample: SyntheticImageSample = SyntheticImageSample.make()
-		let input: MoebiusImageInput = MoebiusImageInput(imageNHWC: sample.image, maskNHWC: sample.mask)
-		let options: MoebiusGenerationOptions = MoebiusGenerationOptions(
+		let pipeline: MoebiusPipeline = .init(model: loaded)
+		let sample: SyntheticImageSample = .make()
+		let input: MoebiusImageInput = .init(imageNHWC: sample.image, maskNHWC: sample.mask)
+		let options: MoebiusGenerationOptions = .init(
 			steps: self.steps,
 			guidanceScale: 2,
 			seed: 7,
@@ -415,7 +433,7 @@ struct ImageSmoke: ParsableCommand {
 				print(progress.stage)
 			}
 		}
-		let stats: TensorStats = TensorStats(values: result)
+		let stats: TensorStats = .init(values: result)
 		print("model: \(loaded.manifest.modelName)-\(loaded.manifest.precision.rawValue)")
 		print("image values: \(result.count)")
 		print("min: \(stats.min)")
@@ -424,8 +442,10 @@ struct ImageSmoke: ParsableCommand {
 	}
 }
 
+// MARK: - GenerateImage
+
 struct GenerateImage: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run one image through a converted model and write a PNG.")
+	static let configuration: CommandConfiguration = .init(abstract: "Run one image through a converted model and write a PNG.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
@@ -448,20 +468,20 @@ struct GenerateImage: ParsableCommand {
 	func run() throws {
 		let directory: URL = try Self.resolveModelDirectory(self.model)
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
-		let pipeline: MoebiusPipeline = MoebiusPipeline(model: loaded)
+		let pipeline: MoebiusPipeline = .init(model: loaded)
 		let sample: SyntheticImageSample = try ImageFileSampleLoader.load(imagePath: self.image, maskPath: self.mask)
-		let input: MoebiusImageInput = MoebiusImageInput(imageNHWC: sample.image, maskNHWC: sample.mask)
-		let options: MoebiusGenerationOptions = MoebiusGenerationOptions(
+		let input: MoebiusImageInput = .init(imageNHWC: sample.image, maskNHWC: sample.mask)
+		let options: MoebiusGenerationOptions = .init(
 			steps: self.steps,
 			guidanceScale: 2,
 			seed: self.seed,
 			strength: 0.99,
 			pasteBack: true
 		)
-		let startedAt: Date = Date()
+		let startedAt: Date = .init()
 		let values: [Float] = try pipeline.runImageRGBFloats(input: input, options: options)
 		let duration: TimeInterval = Date().timeIntervalSince(startedAt)
-		let outputURL: URL = URL(fileURLWithPath: self.output)
+		let outputURL: URL = .init(fileURLWithPath: self.output)
 		try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 		try writeRGBPNG(values: values, url: outputURL)
 		let sizes: MoebiusModelDeploymentInfo = try MoebiusModelDeploymentInfo(directory: directory, manifest: loaded.manifest)
@@ -474,7 +494,7 @@ struct GenerateImage: ParsableCommand {
 	}
 
 	private static func resolveModelDirectory(_ model: String) throws -> URL {
-		let local: URL = URL(fileURLWithPath: model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: model, isDirectory: true)
 		if FileManager.default.fileExists(atPath: local.path) {
 			return local
 		}
@@ -482,8 +502,10 @@ struct GenerateImage: ParsableCommand {
 	}
 }
 
+// MARK: - CompareImage
+
 struct CompareImage: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run the synthetic image sample across multiple precision variants and compare outputs.")
+	static let configuration: CommandConfiguration = .init(abstract: "Run the synthetic image sample across multiple precision variants and compare outputs.")
 
 	@Argument(help: "Model family, for example ft_places2, ft_celebahq, ft_ffhq, or pretrained.")
 	var family: String
@@ -503,15 +525,15 @@ struct CompareImage: ParsableCommand {
 			throw ValidationError("At least one precision is required.")
 		}
 
-		let sample: SyntheticImageSample = SyntheticImageSample.make()
+		let sample: SyntheticImageSample = .make()
 		var reference: [Float]? = nil
 		print("variant\tmin\tmax\tmean\tmax_abs_vs_ref\tmean_abs_vs_ref\tseconds")
 		for precision in requestedPrecisions {
 			let variant: String = "\(self.family)-\(precision)"
-			let startedAt: Date = Date()
+			let startedAt: Date = .init()
 			let values: [Float] = try Self.runVariant(variant: variant, sample: sample, steps: self.steps)
 			let duration: TimeInterval = Date().timeIntervalSince(startedAt)
-			let stats: TensorStats = TensorStats(values: values)
+			let stats: TensorStats = .init(values: values)
 			let diff: TensorDiff?
 			if let reference {
 				diff = TensorDiff(values: values, reference: reference)
@@ -533,12 +555,12 @@ struct CompareImage: ParsableCommand {
 	}
 
 	private static func runVariant(variant: String, sample: SyntheticImageSample, steps: Int) throws -> [Float] {
-		let local: URL = URL(fileURLWithPath: variant, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: variant, isDirectory: true)
 		let directory: URL = FileManager.default.fileExists(atPath: local.path) ? local : try MoebiusModelResolver.resolve(name: variant)
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
-		let pipeline: MoebiusPipeline = MoebiusPipeline(model: loaded)
-		let input: MoebiusImageInput = MoebiusImageInput(imageNHWC: sample.image, maskNHWC: sample.mask)
-		let options: MoebiusGenerationOptions = MoebiusGenerationOptions(
+		let pipeline: MoebiusPipeline = .init(model: loaded)
+		let input: MoebiusImageInput = .init(imageNHWC: sample.image, maskNHWC: sample.mask)
+		let options: MoebiusGenerationOptions = .init(
 			steps: steps,
 			guidanceScale: 2,
 			seed: 7,
@@ -549,8 +571,10 @@ struct CompareImage: ParsableCommand {
 	}
 }
 
+// MARK: - BenchmarkImage
+
 struct BenchmarkImage: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Run the deterministic synthetic image sample and compare image output against a reference model.")
+	static let configuration: CommandConfiguration = .init(abstract: "Run the deterministic synthetic image sample and compare image output against a reference model.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
@@ -584,22 +608,22 @@ struct BenchmarkImage: ParsableCommand {
 		let referenceDirectory: URL = try Self.resolveModelDirectory(self.referenceModel)
 		let candidateDirectory: URL = try Self.resolveModelDirectory(self.model)
 
-		let referenceStartedAt: Date = Date()
+		let referenceStartedAt: Date = .init()
 		let referenceLoaded: MoebiusModel = try MoebiusModel.load(from: referenceDirectory)
 		let referenceLoadDuration: TimeInterval = Date().timeIntervalSince(referenceStartedAt)
 		let referenceValues: [Float] = try Self.runImages(model: referenceLoaded, samples: benchmarkSamples, steps: self.steps, seed: self.seed)
 		let referenceTotalDuration: TimeInterval = Date().timeIntervalSince(referenceStartedAt)
 
-		let candidateStartedAt: Date = Date()
+		let candidateStartedAt: Date = .init()
 		let candidateLoaded: MoebiusModel = try MoebiusModel.load(from: candidateDirectory)
 		let candidateLoadDuration: TimeInterval = Date().timeIntervalSince(candidateStartedAt)
-		let inferenceStartedAt: Date = Date()
+		let inferenceStartedAt: Date = .init()
 		let candidateValues: [Float] = try Self.runImages(model: candidateLoaded, samples: benchmarkSamples, steps: self.steps, seed: self.seed)
 		let inferenceDuration: TimeInterval = Date().timeIntervalSince(inferenceStartedAt)
 		let candidateTotalDuration: TimeInterval = Date().timeIntervalSince(candidateStartedAt)
 
-		let diff: TensorDiff = TensorDiff(values: candidateValues, reference: referenceValues)
-		let stats: TensorStats = TensorStats(values: candidateValues)
+		let diff: TensorDiff = .init(values: candidateValues, reference: referenceValues)
+		let stats: TensorStats = .init(values: candidateValues)
 		let sizes: MoebiusModelDeploymentInfo = try MoebiusModelDeploymentInfo(directory: candidateDirectory, manifest: candidateLoaded.manifest)
 
 		print("model: \(candidateLoaded.manifest.modelName)-\(candidateLoaded.manifest.precision.rawValue)")
@@ -630,7 +654,7 @@ struct BenchmarkImage: ParsableCommand {
 		print("cosine_similarity: \(String(format: "%.8f", diff.cosineSimilarity))")
 
 		if let outputDir {
-			let outputURL: URL = URL(fileURLWithPath: outputDir, isDirectory: true)
+			let outputURL: URL = .init(fileURLWithPath: outputDir, isDirectory: true)
 			try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
 			try Self.writeImages(
 				values: referenceValues,
@@ -649,7 +673,7 @@ struct BenchmarkImage: ParsableCommand {
 	}
 
 	private static func resolveModelDirectory(_ model: String) throws -> URL {
-		let local: URL = URL(fileURLWithPath: model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: model, isDirectory: true)
 		if FileManager.default.fileExists(atPath: local.path) {
 			return local
 		}
@@ -661,29 +685,30 @@ struct BenchmarkImage: ParsableCommand {
 			guard let image, let mask else {
 				throw ValidationError("--image and --mask must be supplied together.")
 			}
+
 			let sample: SyntheticImageSample = try ImageFileSampleLoader.load(imagePath: image, maskPath: mask)
 			let name: String = URL(fileURLWithPath: image).deletingPathExtension().lastPathComponent
 			return [BenchmarkImageSample(name: "file-\(name)", sample: sample)]
 		}
 		return try SyntheticImageSample.names(from: samples).map { name in
-			BenchmarkImageSample(name: name, sample: try SyntheticImageSample.make(named: name))
+			try BenchmarkImageSample(name: name, sample: SyntheticImageSample.make(named: name))
 		}
 	}
 
 	private static func runImages(model: MoebiusModel, samples: [BenchmarkImageSample], steps: Int, seed: UInt64) throws -> [Float] {
-		let pipeline: MoebiusPipeline = MoebiusPipeline(model: model)
+		let pipeline: MoebiusPipeline = .init(model: model)
 		var values: [Float] = []
 		values.reserveCapacity(samples.count * MoebiusImageTensors.imageSize * MoebiusImageTensors.imageSize * 3)
 		for benchmarkSample in samples {
-			let input: MoebiusImageInput = MoebiusImageInput(imageNHWC: benchmarkSample.sample.image, maskNHWC: benchmarkSample.sample.mask)
-			let options: MoebiusGenerationOptions = MoebiusGenerationOptions(
+			let input: MoebiusImageInput = .init(imageNHWC: benchmarkSample.sample.image, maskNHWC: benchmarkSample.sample.mask)
+			let options: MoebiusGenerationOptions = .init(
 				steps: steps,
 				guidanceScale: 2,
 				seed: seed,
 				strength: 0.99,
 				pasteBack: true
 			)
-			values.append(contentsOf: try pipeline.runImageRGBFloats(input: input, options: options))
+			try values.append(contentsOf: pipeline.runImageRGBFloats(input: input, options: options))
 		}
 		return values
 	}
@@ -693,6 +718,7 @@ struct BenchmarkImage: ParsableCommand {
 		guard values.count == samples.count * sampleValueCount else {
 			throw ValidationError("Unexpected image tensor count \(values.count), expected \(samples.count * sampleValueCount).")
 		}
+
 		for index in samples.indices {
 			let start: Int = index * sampleValueCount
 			let end: Int = start + sampleValueCount
@@ -725,9 +751,11 @@ struct BenchmarkImage: ParsableCommand {
 		), let image = context.makeImage() else {
 			throw ValidationError("Unable to create PNG image.")
 		}
+
 		guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
 			throw ValidationError("Unable to create PNG destination: \(url.path)")
 		}
+
 		CGImageDestinationAddImage(destination, image, nil)
 		guard CGImageDestinationFinalize(destination) else {
 			throw ValidationError("Unable to write PNG: \(url.path)")
@@ -743,10 +771,14 @@ struct BenchmarkImage: ParsableCommand {
 	}
 }
 
+// MARK: - BenchmarkImageSample
+
 struct BenchmarkImageSample {
 	let name: String
 	let sample: SyntheticImageSample
 }
+
+// MARK: - ImageFileSampleLoader
 
 enum ImageFileSampleLoader {
 	static func load(imagePath: String, maskPath: String) throws -> SyntheticImageSample {
@@ -770,10 +802,10 @@ enum ImageFileSampleLoader {
 		let bytes: [UInt8] = try Self.rgbaBytes(url: url, interpolation: .none)
 		var values: [Float] = Array(repeating: 0, count: MoebiusImageTensors.imageSize * MoebiusImageTensors.imageSize)
 		for pixel in 0 ..< (MoebiusImageTensors.imageSize * MoebiusImageTensors.imageSize) {
-			let red: Float = Float(bytes[(pixel * 4) + 0])
-			let green: Float = Float(bytes[(pixel * 4) + 1])
-			let blue: Float = Float(bytes[(pixel * 4) + 2])
-			let alpha: Float = Float(bytes[(pixel * 4) + 3]) / 255
+			let red: Float = .init(bytes[(pixel * 4) + 0])
+			let green: Float = .init(bytes[(pixel * 4) + 1])
+			let blue: Float = .init(bytes[(pixel * 4) + 2])
+			let alpha: Float = .init(bytes[(pixel * 4) + 3]) / 255
 			let luma: Float = ((0.299 * red) + (0.587 * green) + (0.114 * blue)) * alpha
 			values[pixel] = luma >= 128 ? 1 : 0
 		}
@@ -782,9 +814,11 @@ enum ImageFileSampleLoader {
 
 	private static func rgbaBytes(url: URL, interpolation: CGInterpolationQuality) throws -> [UInt8] {
 		guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-			  let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+		      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+		else {
 			throw ValidationError("Unable to load image: \(url.path)")
 		}
+
 		let size: Int = MoebiusImageTensors.imageSize
 		var bytes: [UInt8] = Array(repeating: 0, count: size * size * 4)
 		let colorSpace: CGColorSpace = CGColorSpaceCreateDeviceRGB()
@@ -800,6 +834,7 @@ enum ImageFileSampleLoader {
 		) else {
 			throw ValidationError("Unable to create image decode context.")
 		}
+
 		context.interpolationQuality = interpolation
 		context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
 		context.fill(CGRect(x: 0, y: 0, width: size, height: size))
@@ -808,9 +843,9 @@ enum ImageFileSampleLoader {
 	}
 
 	private static func centerCropDrawRect(image: CGImage, outputSize: Int) -> CGRect {
-		let width: CGFloat = CGFloat(image.width)
-		let height: CGFloat = CGFloat(image.height)
-		let target: CGFloat = CGFloat(outputSize)
+		let width: CGFloat = .init(image.width)
+		let height: CGFloat = .init(image.height)
+		let target: CGFloat = .init(outputSize)
 		let scale: CGFloat = max(target / width, target / height)
 		let scaledWidth: CGFloat = width * scale
 		let scaledHeight: CGFloat = height * scale
@@ -823,8 +858,10 @@ enum ImageFileSampleLoader {
 	}
 }
 
+// MARK: - BenchmarkFixture
+
 struct BenchmarkFixture: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(
+	static let configuration: CommandConfiguration = .init(
 		abstract: "Run a deterministic latent fixture and compare MLX final latents against a PyTorch/ONNX reference."
 	)
 
@@ -842,7 +879,7 @@ struct BenchmarkFixture: ParsableCommand {
 
 	func run() throws {
 		let directory: URL = try Self.resolveModelDirectory(self.model)
-		let fixtureURL: URL = URL(fileURLWithPath: self.fixture, isDirectory: true)
+		let fixtureURL: URL = .init(fileURLWithPath: self.fixture, isDirectory: true)
 		let meta: FixtureMeta = try Self.readMeta(fixtureURL.appendingPathComponent("meta.json"))
 		let layout: TensorLayout = try TensorLayout(raw: self.layout)
 
@@ -867,12 +904,12 @@ struct BenchmarkFixture: ParsableCommand {
 			layout: layout
 		)
 
-		let loadStartedAt: Date = Date()
+		let loadStartedAt: Date = .init()
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
 		let loadDuration: TimeInterval = Date().timeIntervalSince(loadStartedAt)
 		let dtype: DType = loaded.manifest.precision.dtype
-		let pipeline: MoebiusPipeline = MoebiusPipeline(model: loaded)
-		let options: MoebiusGenerationOptions = MoebiusGenerationOptions(
+		let pipeline: MoebiusPipeline = .init(model: loaded)
+		let options: MoebiusGenerationOptions = .init(
 			steps: meta.steps,
 			guidanceScale: meta.guidance,
 			seed: 0,
@@ -880,7 +917,7 @@ struct BenchmarkFixture: ParsableCommand {
 			pasteBack: false
 		)
 
-		let startedAt: Date = Date()
+		let startedAt: Date = .init()
 		let result: MLXArray = try pipeline.runLatentFixture(
 			mask64: MLXArray(mask64, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 1]).asType(dtype),
 			maskedLatents: MLXArray(maskedLatents, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 4]).asType(dtype),
@@ -891,7 +928,7 @@ struct BenchmarkFixture: ParsableCommand {
 		let duration: TimeInterval = Date().timeIntervalSince(startedAt)
 		let totalDuration: TimeInterval = Date().timeIntervalSince(loadStartedAt)
 		let values: [Float] = result.asType(.float32).asArray(Float.self)
-		let diff: TensorDiff = TensorDiff(values: values, reference: referenceLatents)
+		let diff: TensorDiff = .init(values: values, reference: referenceLatents)
 		let sizes: MoebiusModelDeploymentInfo = try MoebiusModelDeploymentInfo(directory: directory, manifest: loaded.manifest)
 
 		print("model: \(loaded.manifest.modelName)-\(loaded.manifest.precision.rawValue)")
@@ -918,7 +955,7 @@ struct BenchmarkFixture: ParsableCommand {
 	}
 
 	private static func resolveModelDirectory(_ model: String) throws -> URL {
-		let local: URL = URL(fileURLWithPath: model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: model, isDirectory: true)
 		if FileManager.default.fileExists(atPath: local.path) {
 			return local
 		}
@@ -934,22 +971,25 @@ struct BenchmarkFixture: ParsableCommand {
 		let count: Int = MoebiusImageTensors.latentSize * MoebiusImageTensors.latentSize * channels
 		let values: [Float] = try readRawFloat32(url: url, expectedCount: count)
 		switch layout {
-		case .nhwc:
-			return values
-		case .nchw:
-			return nchwToNHWC(values, height: MoebiusImageTensors.latentSize, width: MoebiusImageTensors.latentSize, channels: channels)
+			case .nhwc:
+				return values
+
+			case .nchw:
+				return nchwToNHWC(values, height: MoebiusImageTensors.latentSize, width: MoebiusImageTensors.latentSize, channels: channels)
 		}
 	}
 }
 
+// MARK: - UNetDebug
+
 struct UNetDebug: ParsableCommand {
-	static let configuration: CommandConfiguration = CommandConfiguration(abstract: "Print early UNet debug stats for the zero-input parity case.")
+	static let configuration: CommandConfiguration = .init(abstract: "Print early UNet debug stats for the zero-input parity case.")
 
 	@Argument(help: "Converted model variant name or directory.")
 	var model: String
 
 	func run() throws {
-		let local: URL = URL(fileURLWithPath: self.model, isDirectory: true)
+		let local: URL = .init(fileURLWithPath: self.model, isDirectory: true)
 		let directory: URL = FileManager.default.fileExists(atPath: local.path) ? local : try MoebiusModelResolver.resolve(name: self.model)
 		let loaded: MoebiusModel = try MoebiusModel.load(from: directory)
 		for (name, shape, minValue, maxValue, meanValue) in loaded.unet.debugZeroStats() {
@@ -957,6 +997,8 @@ struct UNetDebug: ParsableCommand {
 		}
 	}
 }
+
+// MARK: - TensorStats
 
 struct TensorStats {
 	let min: Float
@@ -978,6 +1020,8 @@ struct TensorStats {
 		self.mean = Float(total / Double(values.count))
 	}
 }
+
+// MARK: - TensorDiff
 
 struct TensorDiff {
 	let maxAbs: Float
@@ -1009,7 +1053,7 @@ struct TensorDiff {
 			errors.append(error)
 		}
 		errors.sort()
-		let rmse: Float = Float(sqrt(totalSquared / Double(values.count)))
+		let rmse: Float = .init(sqrt(totalSquared / Double(values.count)))
 		let signalPeak: Float = max(abs(reference.min() ?? 0), abs(reference.max() ?? 0), 1)
 		self.maxAbs = maximum
 		self.meanAbs = Float(totalAbs / Double(values.count))
@@ -1020,11 +1064,15 @@ struct TensorDiff {
 	}
 }
 
+// MARK: - FixtureMeta
+
 struct FixtureMeta: Decodable {
 	var steps: Int
 	var guidance: Float
 	var strength: Float?
 }
+
+// MARK: - TensorLayout
 
 enum TensorLayout: String {
 	case nchw
@@ -1035,9 +1083,12 @@ enum TensorLayout: String {
 		guard let value = Self(rawValue: normalized) else {
 			throw ValidationError("Unsupported tensor layout '\(raw)'. Use nchw or nhwc.")
 		}
+
 		self = value
 	}
 }
+
+// MARK: - TensorDTypeUsage
 
 struct TensorDTypeUsage {
 	let dtype: String
@@ -1056,7 +1107,7 @@ struct TensorDTypeUsage {
 		var elementsByDType: [String: Int] = [:]
 		for group in groups {
 			for array in group.values {
-				let dtype: String = String(describing: array.dtype)
+				let dtype: String = .init(describing: array.dtype)
 				let elements: Int = array.shape.reduce(1, *)
 				elementsByDType[dtype, default: 0] += elements
 			}
@@ -1074,16 +1125,20 @@ struct TensorDTypeUsage {
 
 	private static func bytesPerElement(dtype: String) -> Int {
 		switch dtype {
-		case "float32", "int32", "uint32":
-			return 4
-		case "float16", "bfloat16", "int16", "uint16":
-			return 2
-		case "bool", "int8", "uint8":
-			return 1
-		case "int64", "uint64":
-			return 8
-		default:
-			return 4
+			case "float32", "int32", "uint32":
+				return 4
+
+			case "float16", "bfloat16", "int16", "uint16":
+				return 2
+
+			case "bool", "int8", "uint8":
+				return 1
+
+			case "int64", "uint64":
+				return 8
+
+			default:
+				return 4
 		}
 	}
 }
@@ -1093,6 +1148,7 @@ func readRawFloat32(url: URL, expectedCount: Int? = nil) throws -> [Float] {
 	guard data.count % MemoryLayout<Float>.stride == 0 else {
 		throw ValidationError("Raw f32 file byte count is not divisible by 4: \(url.path)")
 	}
+
 	let values: [Float] = data.withUnsafeBytes { bytes in
 		Array(bytes.bindMemory(to: Float.self))
 	}
@@ -1121,6 +1177,7 @@ func writeRGBPNG(values: [Float], url: URL) throws {
 	guard values.count == size * size * 3 else {
 		throw ValidationError("Unexpected RGB image value count \(values.count), expected \(size * size * 3).")
 	}
+
 	var bytes: [UInt8] = Array(repeating: 255, count: size * size * 4)
 	for pixel in 0 ..< (size * size) {
 		for channel in 0 ..< 3 {
@@ -1142,14 +1199,18 @@ func writeRGBPNG(values: [Float], url: URL) throws {
 	), let image = context.makeImage() else {
 		throw ValidationError("Unable to create PNG image.")
 	}
+
 	guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
 		throw ValidationError("Unable to create PNG destination: \(url.path)")
 	}
+
 	CGImageDestinationAddImage(destination, image, nil)
 	guard CGImageDestinationFinalize(destination) else {
 		throw ValidationError("Unable to write PNG: \(url.path)")
 	}
 }
+
+// MARK: - SyntheticImageSample
 
 struct SyntheticImageSample {
 	let image: [Float]
@@ -1175,6 +1236,7 @@ struct SyntheticImageSample {
 		guard uniqueNames.isEmpty == false else {
 			throw ValidationError("At least one image sample is required.")
 		}
+
 		for name in uniqueNames where Self.allNames.contains(name) == false {
 			throw ValidationError("Unknown image sample '\(name)'. Use \(Self.allNames.joined(separator: ", ")) or all.")
 		}
@@ -1185,16 +1247,20 @@ struct SyntheticImageSample {
 
 	static func make(named name: String) throws -> SyntheticImageSample {
 		switch name {
-		case "gradient-circle":
-			return Self.gradientCircle()
-		case "checker-square":
-			return Self.checkerSquare()
-		case "radial-band":
-			return Self.radialBand()
-		case "diagonal-stripes":
-			return Self.diagonalStripes()
-		default:
-			throw ValidationError("Unknown image sample '\(name)'. Use \(Self.allNames.joined(separator: ", ")) or all.")
+			case "gradient-circle":
+				return Self.gradientCircle()
+
+			case "checker-square":
+				return Self.checkerSquare()
+
+			case "radial-band":
+				return Self.radialBand()
+
+			case "diagonal-stripes":
+				return Self.diagonalStripes()
+
+			default:
+				throw ValidationError("Unknown image sample '\(name)'. Use \(Self.allNames.joined(separator: ", ")) or all.")
 		}
 	}
 
@@ -1208,8 +1274,8 @@ struct SyntheticImageSample {
 				image[(p * 3) + 0] = (Float(x) / Float(size - 1) * 2) - 1
 				image[(p * 3) + 1] = (Float(y) / Float(size - 1) * 2) - 1
 				image[(p * 3) + 2] = (Float(x + y) / Float((size - 1) * 2) * 2) - 1
-				let dx: Float = Float(x - 256)
-				let dy: Float = Float(y - 256)
+				let dx: Float = .init(x - 256)
+				let dy: Float = .init(y - 256)
 				if sqrt((dx * dx) + (dy * dy)) < 95 {
 					mask[p] = 1
 				}
@@ -1229,7 +1295,7 @@ struct SyntheticImageSample {
 				image[(p * 3) + 0] = checker
 				image[(p * 3) + 1] = (Float(x) / Float(size - 1) * 1.4) - 0.7
 				image[(p * 3) + 2] = (Float(y) / Float(size - 1) * 1.4) - 0.7
-				if x > 150 && x < 362 && y > 176 && y < 336 {
+				if x > 150, x < 362, y > 176, y < 336 {
 					mask[p] = 1
 				}
 			}
@@ -1239,20 +1305,20 @@ struct SyntheticImageSample {
 
 	private static func radialBand() -> SyntheticImageSample {
 		let size: Int = MoebiusImageTensors.imageSize
-		let center: Float = Float(size - 1) / 2
+		let center: Float = .init(size - 1) / 2
 		var image: [Float] = Array(repeating: 0, count: size * size * 3)
 		var mask: [Float] = Array(repeating: 0, count: size * size)
 		for y in 0 ..< size {
 			for x in 0 ..< size {
 				let p: Int = (y * size) + x
-				let dx: Float = Float(x) - center
-				let dy: Float = Float(y) - center
+				let dx: Float = .init(x) - center
+				let dy: Float = .init(y) - center
 				let radius: Float = sqrt((dx * dx) + (dy * dy))
 				let angle: Float = atan2(dy, dx)
 				image[(p * 3) + 0] = sin(radius * 0.045)
 				image[(p * 3) + 1] = cos(angle * 3)
 				image[(p * 3) + 2] = (radius / center) - 1
-				if radius > 72 && radius < 154 && x > 128 && x < 410 {
+				if radius > 72, radius < 154, x > 128, x < 410 {
 					mask[p] = 1
 				}
 			}
@@ -1272,7 +1338,7 @@ struct SyntheticImageSample {
 				image[(p * 3) + 1] = sin(Float(x - y) * 0.025)
 				image[(p * 3) + 2] = cos(Float(x + y) * 0.018)
 				let distanceFromDiagonal: Int = abs((x + y) - size)
-				if distanceFromDiagonal < 70 && x > 80 && x < 430 {
+				if distanceFromDiagonal < 70, x > 80, x < 430 {
 					mask[p] = 1
 				}
 			}

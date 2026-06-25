@@ -18,10 +18,10 @@ The requested deliverables are:
 
 ## Source Material
 
-- PyTorch/reference code: `/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-Code`
-- original checkpoints: `/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-Models`
-- ONNX/browser reference: `/Users/kylehowells/Developer/ML-Models/Moebius/moebius-web`
-- converted MLX artifacts: `/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX`
+- PyTorch/reference code: `$MOEBIUS_SOURCE_ROOT/Moebius-Code`
+- original checkpoints: `$MOEBIUS_SOURCE_ROOT/Moebius-Models`
+- ONNX/browser reference: `$MOEBIUS_SOURCE_ROOT/moebius-web`
+- converted MLX artifacts: `Models/Moebius-MLX`
 
 ## Artifact Layout
 
@@ -110,10 +110,10 @@ let rgb01 = try pipeline.runImageRGBFloats(input: input, options: options)
 
 See `Docs/API.md` for the command-level CLI reference and focused Swift API notes.
 
-`MoebiusModelResolver` is intentionally usable from both command-line tools and apps. It searches explicit `preferredDirectory` / `modelRoot` arguments, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT` as a demo/autorun compatibility alias, app bundle resource folders, app Application Support/Documents folders, and finally the local development path:
+`MoebiusModelResolver` is intentionally usable from both command-line tools and apps. It searches explicit `preferredDirectory` / `modelRoot` arguments, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT` as a demo/autorun compatibility alias, app bundle resource folders, and app Application Support/Documents folders. The demo and scripts also conventionally use this repo-local path when passed as `MOEBIUS_MLX_MODEL_DIR`:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX
+Models/Moebius-MLX
 ```
 
 For distributed app usage, the resolver also has an async `resolveOrDownload(...)` path, wrapped by `MoebiusModel.fromPretrained(...)`. It accepts a local directory, a path to `manifest.json`, a known variant name, a Hugging Face repo id, or a Hugging Face URL. Known variants map to one Hub repo per family/precision, for example:
@@ -304,9 +304,9 @@ staged ft_places2-q4-all-spatial-vae (191M)
 Physical iPad validation progressed to build, install, and model provisioning:
 
 ```text
-Device: Kyle‘s iPad Pro (18.6)
+Device: physical iPad (18.6)
 xcodebuild destination UDID: 00008103-001460290E31001E
-devicectl CoreDevice id: 4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1
+devicectl CoreDevice id: <COREDEVICE_ID>
 ```
 
 The physical build passed:
@@ -322,8 +322,8 @@ The app installed through `devicectl`:
 
 ```bash
 xcrun devicectl device install app \
-  --device 4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1 \
-  /Users/kylehowells/Library/Developer/Xcode/DerivedData/MoebiusDemo-cjsunmzjjdrzelbaktvwigzgnnwb/Build/Products/Debug-iphoneos/MoebiusDemo.app
+  --device <COREDEVICE_ID> \
+  <DerivedData>/MoebiusDemo.app
 ```
 
 One quantized model was staged and copied to the app data container:
@@ -331,11 +331,11 @@ One quantized model was staged and copied to the app data container:
 ```bash
 Scripts/stage_models_for_ios.sh --output /tmp/moebius-ipad-stage ft_places2-q4
 xcrun devicectl device copy to \
-  --device 4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1 \
+  --device <COREDEVICE_ID> \
   --source /tmp/moebius-ipad-stage/Moebius-MLX \
   --destination Documents \
   --domain-type appDataContainer \
-  --domain-identifier com.ikyle.MoebiusDemo \
+  --domain-identifier org.moebiusmlx.MoebiusDemo \
   --remove-existing-content false
 ```
 
@@ -343,11 +343,11 @@ Readback confirmed the model manifest on the device:
 
 ```bash
 xcrun devicectl device copy from \
-  --device 4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1 \
+  --device <COREDEVICE_ID> \
   --source Documents/ft_places2-q4/manifest.json \
   --destination /tmp/moebius-ipad-readback/manifest.json \
   --domain-type appDataContainer \
-  --domain-identifier com.ikyle.MoebiusDemo
+  --domain-identifier org.moebiusmlx.MoebiusDemo
 ```
 
 The copied manifest reported `modelName: ft_places2` and `precision: q4`.
@@ -372,7 +372,7 @@ Scripts/run_device_autorun.sh --model ft_places2 --compare --wait-seconds 300 --
 The latest successful provisioning attempt copied the original staged q4 package to the iPad app container and read the manifest back. A later 2026-06-24 continuation check could not launch the app because CoreDevice reported the iPad as unavailable:
 
 ```text
-Kyle‘s iPad Pro  4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1  unavailable
+physical iPad  <COREDEVICE_ID>  unavailable
 ```
 
 The device helper was tested against the current unavailable CoreDevice state with:
@@ -385,7 +385,7 @@ It correctly exited before build/install with:
 
 ```text
 Device is not available:
-Kyle‘s iPad Pro ... unavailable ...
+physical iPad ... unavailable ...
 ```
 
 The current feed-forward q4 package for the next physical-device attempt is staged at `/tmp/moebius-ipad-feedforward-stage/Moebius-MLX/ft_places2-q4`.
@@ -403,7 +403,7 @@ done
 All 16 quantized variants have materialized quantized UNet artifacts:
 
 ```bash
-find /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX \
+find Models/Moebius-MLX \
   -maxdepth 2 -name unet_quantized.safetensors
 ```
 
@@ -455,7 +455,7 @@ The current candidate selector path was then launched through the same Catalyst 
 done ft_places2-q4-all-spatial-vae steps=2 seconds=... model_mb=200.50 memory_mb=... min=0.0 max=1.0 mean=...
 ```
 
-The iPad Simulator app was also built and launched with the corrected bundle id, `com.ikyle.MoebiusDemo`. The runtime UI snapshot showed the programmatic `SceneDelegate` root controller with:
+The iPad Simulator app was also built and launched with the corrected bundle id, `org.moebiusmlx.MoebiusDemo`. The runtime UI snapshot showed the programmatic `SceneDelegate` root controller with:
 
 - model tabs: `ft_places2`, `ft_celebahq`, `ft_ffhq`, `pretrained`
 - precision tabs: `f32`, `f16`, `q8`, `q4`, `mxfp8`, `mxfp4`
@@ -538,7 +538,7 @@ That smoke comparison is useful, but it is not enough to prove the port is faith
 
 ```bash
 swift run moebius-mlx benchmark-fixture ft_places2-f32 \
-  --fixture /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/fixtures/ft_places2-onnx-steps20 \
+  --fixture Fixtures/ft_places2-onnx-steps20 \
   --reference-name onnx
 ```
 
@@ -571,8 +571,8 @@ Graph/report generation is handled by:
 Scripts/run_benchmark_report.sh \
   --family ft_places2 \
   --reference onnx \
-  --fixture /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/fixtures/ft_places2-onnx-steps20 \
-  --output-dir /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-onnx-steps20
+  --fixture Fixtures/ft_places2-onnx-steps20 \
+  --output-dir BenchmarkReports/ft_places2-onnx-steps20
 ```
 
 It writes:
@@ -635,7 +635,7 @@ That produced all five PNG charts and a markdown table. These numbers are intent
 A real ONNX-backed 20-step `ft_places2` fixture and graph report were generated for the demo-visible variants at:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/fixtures/ft_places2-onnx-steps20
+Fixtures/ft_places2-onnx-steps20
 Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants
 ```
 
@@ -676,7 +676,7 @@ ft_places2-q4-ff-spatial   442.56    0.178230  0.97694558  15.436
 The focused q4 spatial graph report is in:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-onnx-steps20-q4-spatial
+BenchmarkReports/ft_places2-onnx-steps20-q4-spatial
 ```
 
 The next experimental candidate also adds `vae_encoder_quantized.safetensors` and `vae_decoder_quantized.safetensors`, packing eligible VAE `Linear` and Conv2d weights. The latent fixture does not exercise VAE reconstruction/decode quality, so the RMSE/cosine values remain identical to the UNet-only spatial candidate. The useful evidence in this report is package size, load time, denoising runtime, plus a separate two-step `image-smoke` run that loaded the quantized VAE path and produced bounded `[0, 1]` output.
@@ -691,7 +691,7 @@ ft_places2-q4-ff-spatial-vae    322.50    0.178230  0.97694558  15.267
 The focused q4 VAE graph report is in:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-onnx-steps20-q4-vae
+BenchmarkReports/ft_places2-onnx-steps20-q4-vae
 ```
 
 The size-target boundary artifact, `unet_quantized_pointwise_all_spatial.safetensors` plus the quantized VAE files, reaches the requested package size but has a large fidelity falloff in the 20-step latent benchmark:
@@ -707,7 +707,7 @@ The audited deployment payload is 200.28 MB decimal / 191.00 MiB. It loads and c
 The focused 200 MB q4 graph report is in:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-onnx-steps20-q4-200mb
+BenchmarkReports/ft_places2-onnx-steps20-q4-200mb
 ```
 
 Image-level benchmark against `ft_places2-f16` on the deterministic synthetic image/mask/seed with two denoising steps:
@@ -722,7 +722,7 @@ ft_places2-q4-all-spatial-vae   200.50    0.011488    0.057879  0.99980158  1.91
 This confirms that VAE quantization is the dominant image-output change in these candidates: the 322 MB and 200 MB variants have similar two-step image error, while default q4 remains very close to f16. The report is in:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-image-f16-steps2-q4-candidates
+BenchmarkReports/ft_places2-image-f16-steps2-q4-candidates
 ```
 
 The image benchmark path now also supports deterministic multi-sample aggregation:
@@ -735,7 +735,7 @@ Scripts/run_image_benchmark_report.sh \
   --samples all \
   --variants 'ft_places2-q4-default=ft_places2-q4,ft_places2-q4-ff-spatial-vae=ft_places2-q4-ff-spatial-vae,ft_places2-q4-all-spatial-vae=ft_places2-q4-all-spatial-vae' \
   --steps 2 \
-  --output-dir /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-image-f16-steps2-q4-candidates-all-samples
+  --output-dir BenchmarkReports/ft_places2-image-f16-steps2-q4-candidates-all-samples
 ```
 
 The `all` sample set covers four deterministic image/mask profiles: gradient/circle, checker/square, radial/band, and diagonal/stripes. Aggregate two-step metrics:
@@ -750,7 +750,7 @@ ft_places2-q4-all-spatial-vae   200.50    0.014082    0.068348  0.99971575  6.96
 This broader image check preserves the earlier conclusion: default q4 remains the best quality/speed tradeoff; the 200 MB candidate is a real package-size target but carries a much larger RGB error. The all-samples graph report is in:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-image-f16-steps2-q4-candidates-all-samples
+BenchmarkReports/ft_places2-image-f16-steps2-q4-candidates-all-samples
 ```
 
 The same report path supports file-backed image/mask benchmarks:
@@ -777,13 +777,13 @@ ft_places2-q4-all-spatial-vae   200.50    0.011295    0.057014  0.99983478  1.83
 The real-image smoke graph report is in:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-image-f16-steps2-real-smoke
+BenchmarkReports/ft_places2-image-f16-steps2-real-smoke
 ```
 
 The current q4-policy graph report is in:
 
 ```text
-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/ft_places2-onnx-steps20-q4-policies
+BenchmarkReports/ft_places2-onnx-steps20-q4-policies
 ```
 
 ## Current Completion Audit
@@ -827,7 +827,7 @@ Final completion status:          not complete until an available iPad completes
 The latest device availability check still reports the target iPad as unavailable:
 
 ```text
-Kyle‘s iPad Pro  4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1  unavailable
+physical iPad  <COREDEVICE_ID>  unavailable
 ```
 
 The next completion command remains:
@@ -887,7 +887,7 @@ The current q4/mxfp4 variants are therefore not full-model q4 packages. The orig
 
 ## Limitations And Next Work
 
-- The repo includes a generated ONNX-backed benchmark report under `Docs/BenchmarkReports`, and the external fixture/report cache is under `/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks`. Regenerating those references on a fresh machine still requires the Python reference dependencies, including `onnxruntime` and/or `diffusers`.
+- The repo includes a generated ONNX-backed benchmark report under `Docs/BenchmarkReports`, and the external fixture/report cache is under `BenchmarkReports`. Regenerating those references on a fresh machine still requires the Python reference dependencies, including `onnxruntime` and/or `diffusers`.
 - Quantized variants materialize compact quantized UNet parameters. By default only supported `Linear` and `Embedding` modules are quantized. `ft_places2-q4` has additionally been re-exported with feed-forward 1x1 UNet convolutions packed, and experimental non-default artifacts also pack eligible spatial sampler 3x3 convolutions and VAE conv/linear weights; remaining 1x1 attention/resnet, depthwise, and relative-position weights are still mostly f16.
 - Catalyst demo generation has been verified through the actual view-controller autorun path. iPad Simulator UI launch is verified, but MLX Swift currently aborts during Metal stream/device initialization on iOS Simulator. The library and demo now fail gracefully there.
 - Physical iPad build, install, and model-container copy are verified. Real-device model execution and timing/memory validation still need one available unlocked-device autorun/manual run; the latest 2026-06-24 `devicectl list devices` check reported the iPad as unavailable. The demo autorun status now records timing and resident memory fields so that run can be captured from the app container status file.

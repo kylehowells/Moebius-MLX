@@ -9,22 +9,37 @@ import MLXNN
 /// lowers ungrouped Conv2d to im2col + quantizedMM so the converter/runtime can
 /// store large convolutional weights compactly while keeping execution on MLX.
 public final class MoebiusQuantizedPointwiseConv2d: Module, UnaryLayer, Quantized {
+	/// Packed quantized convolution weights.
 	public let weight: MLXArray
+	/// Optional floating-point bias.
 	public let bias: MLXArray?
+	/// Quantization scales.
 	public let scales: MLXArray
+	/// Optional quantization biases.
 	public let biases: MLXArray?
 
+	/// Number of input channels.
 	public let inputChannels: Int
+	/// Number of output channels.
 	public let outputChannels: Int
+	/// Kernel height.
 	public let kernelHeight: Int
+	/// Kernel width.
 	public let kernelWidth: Int
+	/// Vertical and horizontal stride.
 	public let stride: (Int, Int)
+	/// Vertical and horizontal padding.
 	public let padding: (Int, Int)
+	/// Vertical and horizontal dilation.
 	public let dilation: (Int, Int)
+	/// Quantization group size.
 	public let groupSize: Int
+	/// Quantization bit width.
 	public let bits: Int
+	/// Quantization mode.
 	public let mode: QuantizationMode
 
+	/// Creates a quantized convolution from already-packed quantized weights.
 	public init(
 		weight: MLXArray,
 		bias: MLXArray?,
@@ -60,6 +75,7 @@ public final class MoebiusQuantizedPointwiseConv2d: Module, UnaryLayer, Quantize
 		self.freeze()
 	}
 
+	/// Quantizes a floating-point convolution weight tensor into a packed convolution module.
 	public convenience init(
 		floatWeight: MLXArray,
 		bias: MLXArray?,
@@ -107,6 +123,7 @@ public final class MoebiusQuantizedPointwiseConv2d: Module, UnaryLayer, Quantize
 		)
 	}
 
+	/// Applies the quantized convolution to an NHWC tensor.
 	public func callAsFunction(_ x: MLXArray) -> MLXArray {
 		let shape: [Int] = x.shape
 		precondition(shape.count == 4, "Expected NHWC input.")

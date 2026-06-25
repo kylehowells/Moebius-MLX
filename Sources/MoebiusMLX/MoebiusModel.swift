@@ -3,14 +3,24 @@ import Hub
 import MLX
 import MLXNN
 
+// MARK: - MoebiusDownloadProgress
+
+/// Progress information emitted while downloading a Moebius MLX model from Hugging Face Hub.
 public struct MoebiusDownloadProgress: Sendable {
+	/// Hugging Face repository id being downloaded.
 	public let repoID: String
+	/// Repository revision being downloaded.
 	public let revision: String
+	/// Completed bytes or work units reported by the Hub client.
 	public let completedUnitCount: Int64
+	/// Total bytes or work units reported by the Hub client.
 	public let totalUnitCount: Int64
+	/// Completed fraction in the range `0...1`.
 	public let fractionCompleted: Double
+	/// Estimated download speed in bytes per second, when available.
 	public let bytesPerSecond: Double?
 
+	/// Creates a progress snapshot from the Hub client's `Progress` object.
 	public init(repoID: String, revision: String, progress: Progress, bytesPerSecond: Double?) {
 		self.repoID = repoID
 		self.revision = revision
@@ -21,15 +31,28 @@ public struct MoebiusDownloadProgress: Sendable {
 	}
 }
 
+// MARK: - MoebiusModel
+
+/// Loaded Moebius MLX model containing the UNet, VAE, manifest, and loaded weight arrays.
 public final class MoebiusModel: @unchecked Sendable {
+	/// Manifest describing model files, precision, scheduler, and tensor dimensions.
 	public let manifest: MoebiusModelManifest
+	/// Directory containing `manifest.json` and the referenced safetensors files.
 	public let modelDirectory: URL
+	/// Loaded UNet weights retained for lifetime management and diagnostics.
 	public let unetWeights: [String: MLXArray]
+	/// Loaded VAE encoder weights retained for lifetime management and diagnostics.
 	public let vaeEncoderWeights: [String: MLXArray]
+	/// Loaded VAE decoder weights retained for lifetime management and diagnostics.
 	public let vaeDecoderWeights: [String: MLXArray]
+	/// Runtime UNet module.
 	public let unet: MoebiusUNet
+	/// Runtime autoencoder module.
 	public let autoencoder: MoebiusAutoencoder
 
+	/// Creates a model from already-loaded components.
+	///
+	/// Most apps should use `load(from:)` or `fromPretrained(...)`.
 	public init(
 		manifest: MoebiusModelManifest,
 		modelDirectory: URL,
@@ -48,6 +71,10 @@ public final class MoebiusModel: @unchecked Sendable {
 		self.autoencoder = autoencoder
 	}
 
+	/// Resolves, downloads if needed, and loads a model.
+	///
+	/// `source` can be a local model directory, a variant name such as `ft_places2-q4`,
+	/// a Hugging Face `namespace/repo` id, or a Hugging Face model URL.
 	public static func fromPretrained(
 		_ source: String = "ft_places2-q4",
 		revision: String = MoebiusModelResolver.defaultHubRevision,
@@ -67,6 +94,9 @@ public final class MoebiusModel: @unchecked Sendable {
 		return try self.load(from: directory, progress: progress)
 	}
 
+	/// Loads a converted Moebius MLX model from a local directory.
+	///
+	/// The directory must contain `manifest.json` and all files referenced by the manifest.
 	public static func load(from directory: URL, progress: ((String) -> Void)? = nil) throws -> MoebiusModel {
 		try MoebiusRuntime.validateModelExecutionSupport()
 		progress?("Reading manifest")
@@ -86,7 +116,7 @@ public final class MoebiusModel: @unchecked Sendable {
 		let vaeDecoder: [String: MLXArray] = try MLX.loadArrays(url: directory.appendingPathComponent(vaeDecoderFile))
 
 		progress?("Building UNet")
-		let unetModel: MoebiusUNet = MoebiusUNet()
+		let unetModel: MoebiusUNet = .init()
 		let unet: [String: MLXArray]
 		if let quantizedFile = manifest.files.unetQuantized, manifest.precision.quantization != nil {
 			progress?("Loading quantized UNet")
@@ -113,7 +143,7 @@ public final class MoebiusModel: @unchecked Sendable {
 		}
 		unetModel.train(false)
 		progress?("Building VAE")
-		let autoencoder: MoebiusAutoencoder = MoebiusAutoencoder(scalingFactor: manifest.scalingFactor)
+		let autoencoder: MoebiusAutoencoder = .init(scalingFactor: manifest.scalingFactor)
 		if useQuantizedVAE {
 			progress?("Applying quantized VAE module layout")
 			MoebiusModel.applyQuantizationIfNeeded(
@@ -149,6 +179,9 @@ public final class MoebiusModel: @unchecked Sendable {
 		)
 	}
 
+	/// Applies runtime quantization to supported MLX modules when `precision` is quantized.
+	///
+	/// This is mainly used by the loader and validation tools.
 	public static func applyQuantizationIfNeeded(
 		to model: Module,
 		precision: MoebiusPrecision,
@@ -160,19 +193,22 @@ public final class MoebiusModel: @unchecked Sendable {
 		guard let config = precision.quantization else {
 			return
 		}
+
 		let mode: QuantizationMode
 		switch config.mode {
-		case "mxfp4":
-			mode = .mxfp4
-		case "mxfp8":
-			mode = .mxfp8
-		default:
-			mode = .affine
+			case "mxfp4":
+				mode = .mxfp4
+
+			case "mxfp8":
+				mode = .mxfp8
+
+			default:
+				mode = .affine
 		}
 		quantize(
 			model: model,
 			filter: { path, module in
-				guard quantizationSupported(
+				guard self.quantizationSupported(
 					module: module,
 					path: path,
 					groupSize: config.groupSize,
@@ -183,6 +219,7 @@ public final class MoebiusModel: @unchecked Sendable {
 				) else {
 					return nil
 				}
+
 				return (groupSize: config.groupSize, bits: config.bits, mode: mode)
 			},
 			apply: { module, groupSize, bits, mode in
@@ -215,6 +252,9 @@ public final class MoebiusModel: @unchecked Sendable {
 		)
 	}
 
+	/// Loads the source floating-point UNet from a model directory.
+	///
+	/// This helper is useful for validation tools comparing quantized and non-quantized paths.
 	public static func loadSourceUNet(
 		from directory: URL,
 		manifest: MoebiusModelManifest? = nil,
@@ -231,12 +271,15 @@ public final class MoebiusModel: @unchecked Sendable {
 		}
 		progress?("Loading source UNet")
 		let unetWeights: [String: MLXArray] = try MLX.loadArrays(url: directory.appendingPathComponent(resolvedManifest.files.unet))
-		let unetModel: MoebiusUNet = MoebiusUNet()
+		let unetModel: MoebiusUNet = .init()
 		progress?("Applying source UNet weights")
 		try moebiusLoadWeights(unetWeights, into: unetModel, mapper: moebiusUNetRemap, dtype: resolvedManifest.precision.dtype, verify: .all)
 		return (unetModel, unetWeights)
 	}
 
+	/// Loads the source floating-point autoencoder from a model directory.
+	///
+	/// This helper is useful for validation tools comparing quantized and non-quantized paths.
 	public static func loadSourceAutoencoder(
 		from directory: URL,
 		manifest: MoebiusModelManifest? = nil,
@@ -254,7 +297,7 @@ public final class MoebiusModel: @unchecked Sendable {
 		progress?("Loading source VAE")
 		let encoderWeights: [String: MLXArray] = try MLX.loadArrays(url: directory.appendingPathComponent(resolvedManifest.files.vaeEncoder))
 		let decoderWeights: [String: MLXArray] = try MLX.loadArrays(url: directory.appendingPathComponent(resolvedManifest.files.vaeDecoder))
-		let autoencoder: MoebiusAutoencoder = MoebiusAutoencoder(scalingFactor: resolvedManifest.scalingFactor)
+		let autoencoder: MoebiusAutoencoder = .init(scalingFactor: resolvedManifest.scalingFactor)
 		progress?("Applying source VAE weights")
 		try moebiusLoadWeights(encoderWeights, into: autoencoder, mapper: moebiusVAERemap, dtype: resolvedManifest.precision.dtype)
 		try moebiusLoadWeights(decoderWeights, into: autoencoder, mapper: moebiusVAERemap, dtype: resolvedManifest.precision.dtype)
@@ -271,12 +314,12 @@ public final class MoebiusModel: @unchecked Sendable {
 		spatialConvolutionPolicy: String?
 	) -> Bool {
 		if includePointwiseConvolutions, let conv = module as? Conv2d {
-			if pointwiseQuantizationSupported(conv, groupSize: groupSize) {
-				return pointwisePolicyAllows(path: path, policy: pointwiseConvolutionPolicy)
+			if self.pointwiseQuantizationSupported(conv, groupSize: groupSize) {
+				return self.pointwisePolicyAllows(path: path, policy: pointwiseConvolutionPolicy)
 			}
 		}
 		if includeSpatialConvolutions, let conv = module as? Conv2d {
-			return spatialQuantizationSupported(conv, groupSize: groupSize) && spatialPolicyAllows(path: path, policy: spatialConvolutionPolicy)
+			return self.spatialQuantizationSupported(conv, groupSize: groupSize) && self.spatialPolicyAllows(path: path, policy: spatialConvolutionPolicy)
 		}
 		if let linear = module as? Linear {
 			return linear.shape.1 % groupSize == 0
@@ -292,14 +335,17 @@ public final class MoebiusModel: @unchecked Sendable {
 		guard shape.count == 4 else {
 			return false
 		}
+
 		guard shape[1] == 1, shape[2] == 1, conv.groups == 1 else {
 			return false
 		}
+
 		let outputChannels: Int = shape[0]
 		let inputChannels: Int = shape[3]
 		guard inputChannels % groupSize == 0, outputChannels % 32 == 0 else {
 			return false
 		}
+
 		return true
 	}
 
@@ -308,59 +354,76 @@ public final class MoebiusModel: @unchecked Sendable {
 		guard shape.count == 4 else {
 			return false
 		}
+
 		guard (shape[1] != 1 || shape[2] != 1), conv.groups == 1 else {
 			return false
 		}
+
 		let outputChannels: Int = shape[0]
 		let flattenedInputChannels: Int = shape[1] * shape[2] * shape[3]
 		guard flattenedInputChannels % groupSize == 0, outputChannels % 32 == 0 else {
 			return false
 		}
+
 		return true
 	}
 
 	private static func pointwisePolicyAllows(path: String, policy: String?) -> Bool {
 		switch policy ?? "all" {
-		case "all":
-			return true
-		case "feedforward":
-			return path.contains(".ff.") || path.contains("ff.")
-		case "attention":
-			return path.contains(".attn1.") || path.contains(".attn2.") || path.contains("attn1.") || path.contains("attn2.")
-		case "transformer-projection":
-			return path.hasSuffix("proj_in") || path.hasSuffix("proj_out") || path.contains(".proj_in") || path.contains(".proj_out")
-		case "resnet":
-			return path.contains(".resnets.") || path.contains("conv_in") || path.contains("conv_out")
-		case "vae", "vae-conv":
-			return path.contains("encoder.") || path.contains("decoder.")
-		default:
-			return false
+			case "all":
+				return true
+
+			case "feedforward":
+				return path.contains(".ff.") || path.contains("ff.")
+
+			case "attention":
+				return path.contains(".attn1.") || path.contains(".attn2.") || path.contains("attn1.") || path.contains("attn2.")
+
+			case "transformer-projection":
+				return path.hasSuffix("proj_in") || path.hasSuffix("proj_out") || path.contains(".proj_in") || path.contains(".proj_out")
+
+			case "resnet":
+				return path.contains(".resnets.") || path.contains("conv_in") || path.contains("conv_out")
+
+			case "vae", "vae-conv":
+				return path.contains("encoder.") || path.contains("decoder.")
+
+			default:
+				return false
 		}
 	}
 
 	private static func spatialPolicyAllows(path: String, policy: String?) -> Bool {
 		switch policy ?? "spatial" {
-		case "all":
-			return true
-		case "spatial", "samplers":
-			return path.contains(".downsamplers.") || path.contains(".upsamplers.")
-		case "vae", "vae-conv":
-			return path.contains("encoder.") || path.contains("decoder.")
-		default:
-			return false
+			case "all":
+				return true
+
+			case "spatial", "samplers":
+				return path.contains(".downsamplers.") || path.contains(".upsamplers.")
+
+			case "vae", "vae-conv":
+				return path.contains("encoder.") || path.contains("decoder.")
+
+			default:
+				return false
 		}
 	}
 }
 
+// MARK: - MoebiusRuntime
+
+/// Runtime capability checks for platforms where MLX model execution is unavailable.
 public enum MoebiusRuntime {
+	/// Whether the current process can execute Moebius MLX models.
 	public static var supportsModelExecution: Bool {
 		#if os(iOS) && targetEnvironment(simulator)
-			return false
+		return false
 		#else
-			return true
+		return true
 		#endif
 	}
 
+	/// Throws a descriptive error if the current runtime cannot execute Moebius MLX models.
 	public static func validateModelExecutionSupport() throws {
 		if self.supportsModelExecution == false {
 			throw MoebiusError.unsupportedRuntime("Moebius MLX model execution is not supported on iOS Simulator because MLX Swift aborts while initializing its Metal stream/device. Run the demo as Mac Catalyst or on a physical iPad/iPhone.")
@@ -368,15 +431,22 @@ public enum MoebiusRuntime {
 	}
 }
 
+// MARK: - MoebiusModelResolver
+
+/// Resolves local models and downloads public Moebius MLX model repositories.
 public enum MoebiusModelResolver {
+	/// Default Hugging Face namespace used for short variant names.
 	public static let defaultHubNamespace: String = "iky1e"
+	/// Default Hugging Face revision used by download APIs.
 	public static let defaultHubRevision: String = "main"
+	/// File patterns downloaded from a model repository.
 	public static let hubFileGlobs: [String] = [
 		"README.md",
 		"manifest.json",
 		"*.safetensors",
 	]
 
+	/// Resolves a local model directory by short name or explicit path.
 	public static func resolve(name: String, preferredDirectory: URL? = nil, modelRoot: URL? = nil) throws -> URL {
 		return try self.resolve(
 			name: name,
@@ -386,6 +456,7 @@ public enum MoebiusModelResolver {
 		)
 	}
 
+	/// Resolves a local model directory or downloads it from Hugging Face Hub.
 	public static func resolveOrDownload(
 		source: String,
 		revision: String = Self.defaultHubRevision,
@@ -426,6 +497,7 @@ public enum MoebiusModelResolver {
 		}
 	}
 
+	/// Returns the default Hugging Face repo id for a short variant name.
 	public static func defaultHubRepoID(for variantName: String) -> String? {
 		let parts: [String] = variantName.split(separator: "-").map(String.init)
 		guard parts.count >= 2 else {
@@ -448,34 +520,37 @@ public enum MoebiusModelResolver {
 		guard precision.isEmpty == false else {
 			return nil
 		}
+
 		return "\(Self.defaultHubNamespace)/moebius-\(family)-mlx-\(precision)"
 	}
 
+	/// Returns the default model download/cache directory for the current platform.
 	public static func defaultHubDownloadBase(fileManager: FileManager = .default) -> URL {
 		#if os(macOS)
-			let environment: [String: String] = ProcessInfo.processInfo.environment
-			if let hubCache = environment["HF_HUB_CACHE"], hubCache.isEmpty == false {
-				return URL(fileURLWithPath: hubCache, isDirectory: true).appendingPathComponent("moebius-mlx", isDirectory: true)
-			}
-			if let hfHome = environment["HF_HOME"], hfHome.isEmpty == false {
-				return URL(fileURLWithPath: hfHome, isDirectory: true)
-					.appendingPathComponent("hub", isDirectory: true)
-					.appendingPathComponent("moebius-mlx", isDirectory: true)
-			}
-			return fileManager.homeDirectoryForCurrentUser
-				.appendingPathComponent(".cache", isDirectory: true)
-				.appendingPathComponent("huggingface", isDirectory: true)
+		let environment: [String: String] = ProcessInfo.processInfo.environment
+		if let hubCache = environment["HF_HUB_CACHE"], hubCache.isEmpty == false {
+			return URL(fileURLWithPath: hubCache, isDirectory: true).appendingPathComponent("moebius-mlx", isDirectory: true)
+		}
+		if let hfHome = environment["HF_HOME"], hfHome.isEmpty == false {
+			return URL(fileURLWithPath: hfHome, isDirectory: true)
 				.appendingPathComponent("hub", isDirectory: true)
 				.appendingPathComponent("moebius-mlx", isDirectory: true)
+		}
+		return fileManager.homeDirectoryForCurrentUser
+			.appendingPathComponent(".cache", isDirectory: true)
+			.appendingPathComponent("huggingface", isDirectory: true)
+			.appendingPathComponent("hub", isDirectory: true)
+			.appendingPathComponent("moebius-mlx", isDirectory: true)
 		#else
-			let applicationSupport: URL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-				?? fileManager.temporaryDirectory
-			return applicationSupport
-				.appendingPathComponent("Moebius-MLX", isDirectory: true)
-				.appendingPathComponent("HuggingFace", isDirectory: true)
+		let applicationSupport: URL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+			?? fileManager.temporaryDirectory
+		return applicationSupport
+			.appendingPathComponent("Moebius-MLX", isDirectory: true)
+			.appendingPathComponent("HuggingFace", isDirectory: true)
 		#endif
 	}
 
+	/// Downloads a Hugging Face model snapshot and returns the directory containing `manifest.json`.
 	public static func downloadFromHub(
 		repoID: String,
 		revision: String = Self.defaultHubRevision,
@@ -485,7 +560,7 @@ public enum MoebiusModelResolver {
 	) async throws -> URL {
 		let normalizedRepoID: String = self.normalizedHubRepoID(repoID)
 		let destinationBase: URL = downloadBase ?? self.defaultHubDownloadBase()
-		let hub: HubApi = HubApi(downloadBase: destinationBase, cache: .default, hfToken: hfToken)
+		let hub: HubApi = .init(downloadBase: destinationBase, cache: .default, hfToken: hfToken)
 		let directory: URL = try await hub.snapshot(
 			from: normalizedRepoID,
 			revision: revision,
@@ -523,7 +598,7 @@ public enum MoebiusModelResolver {
 		}
 		for environmentKey in ["MOEBIUS_MLX_MODEL_DIR", "MOEBIUS_MODEL_ROOT"] {
 			if let env = environment[environmentKey], !env.isEmpty {
-				let envURL: URL = URL(fileURLWithPath: env, isDirectory: true)
+				let envURL: URL = .init(fileURLWithPath: env, isDirectory: true)
 				candidates.append(envURL)
 				candidates.append(envURL.appendingPathComponent(name, isDirectory: true))
 			}
@@ -539,8 +614,6 @@ public enum MoebiusModelResolver {
 				candidates.append(directory.appendingPathComponent("Moebius-MLX", isDirectory: true).appendingPathComponent(name, isDirectory: true))
 			}
 		}
-		candidates.append(URL(fileURLWithPath: "/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX/\(name)", isDirectory: true))
-
 		for candidate in candidates {
 			if fileManager.fileExists(atPath: candidate.appendingPathComponent("manifest.json").path) {
 				return candidate
@@ -551,7 +624,7 @@ public enum MoebiusModelResolver {
 	}
 
 	static func localDirectoryIfPresent(_ source: String, fileManager: FileManager = .default) -> URL? {
-		let local: URL = URL(fileURLWithPath: source).standardizedFileURL
+		let local: URL = .init(fileURLWithPath: source).standardizedFileURL
 		if fileManager.fileExists(atPath: local.path) {
 			if local.lastPathComponent == "manifest.json" {
 				return local.deletingLastPathComponent()
@@ -567,7 +640,8 @@ public enum MoebiusModelResolver {
 		let trimmed: String = raw.trimmingCharacters(in: .whitespacesAndNewlines)
 		if let url = URL(string: trimmed),
 		   let host = url.host?.lowercased(),
-		   host.contains("huggingface.co") {
+		   host.contains("huggingface.co")
+		{
 			let parts: [String] = url.path.split(separator: "/").map(String.init)
 			if parts.count >= 2 {
 				return "\(parts[0])/\(parts[1])"
@@ -577,22 +651,33 @@ public enum MoebiusModelResolver {
 	}
 }
 
+// MARK: - MoebiusError
+
+/// Errors thrown by Moebius MLX model loading, resolution, and generation helpers.
 public enum MoebiusError: Error, LocalizedError {
+	/// A model directory could not be found. The associated array contains searched paths.
 	case modelNotFound(String, [String])
+	/// The current runtime cannot execute Moebius MLX models.
 	case unsupportedRuntime(String)
+	/// Input data or configuration was invalid.
 	case invalidInput(String)
+	/// A Hugging Face Hub download failed or produced an unusable snapshot.
 	case downloadFailed(String)
 
+	/// Human-readable error description.
 	public var errorDescription: String? {
 		switch self {
-		case .modelNotFound(let name, let paths):
-			return "Could not find Moebius MLX model '\(name)'. Searched: \(paths.joined(separator: ", "))"
-		case .unsupportedRuntime(let message):
-			return message
-		case .invalidInput(let message):
-			return message
-		case .downloadFailed(let message):
-			return "Download failed: \(message)"
+			case let .modelNotFound(name, paths):
+				return "Could not find Moebius MLX model '\(name)'. Searched: \(paths.joined(separator: ", "))"
+
+			case let .unsupportedRuntime(message):
+				return message
+
+			case let .invalidInput(message):
+				return message
+
+			case let .downloadFailed(message):
+				return "Download failed: \(message)"
 		}
 	}
 }

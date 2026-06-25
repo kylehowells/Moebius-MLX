@@ -113,7 +113,7 @@ let outputRGB01 = try pipeline.runImageRGBFloats(
 
 `MoebiusModelResolver`
 
-- `resolve(name:preferredDirectory:modelRoot:)`: finds a variant directory by explicit directory, model root, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, app bundle resources, Application Support, Documents, or the local development model path.
+- `resolve(name:preferredDirectory:modelRoot:)`: finds a variant directory by explicit directory, model root, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, app bundle resources, Application Support, or Documents.
 - `resolveOrDownload(source:revision:preferredDirectory:modelRoot:hfToken:downloadBase:progress:onDownloadProgress:)`: resolves local paths and known model names first, then downloads from Hugging Face when needed.
 - `downloadFromHub(repoID:revision:hfToken:downloadBase:onDownloadProgress:)`: downloads a specific Hub repo snapshot containing `README.md`, `manifest.json`, and `*.safetensors`.
 - `defaultHubRepoID(for:)`: maps local variant names to the default `iky1e/moebius-...` Hub repo naming convention.
@@ -189,7 +189,7 @@ swift run moebius-mlx benchmark-image ft_places2-q4 \
   --samples gradient-circle
 
 swift run moebius-mlx benchmark-fixture ft_places2-f32 \
-  --fixture /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/fixtures/ft_places2-onnx-steps20 \
+  --fixture Fixtures/ft_places2-onnx-steps20 \
   --reference-name onnx
 ```
 
@@ -197,7 +197,7 @@ Generate the checked-in graph report:
 
 ```bash
 Scripts/run_benchmark_report.sh \
-  --fixture /Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/fixtures/ft_places2-onnx-steps20 \
+  --fixture Fixtures/ft_places2-onnx-steps20 \
   --reference onnx \
   --steps 20 \
   --variants 'ft_places2-f32=ft_places2-f32,ft_places2-f16=ft_places2-f16,ft_places2-q8=ft_places2-q8,ft_places2-q4=ft_places2-q4,ft_places2-mxfp8=ft_places2-mxfp8,ft_places2-mxfp4=ft_places2-mxfp4,ft_places2-q4-ff-spatial-vae=ft_places2-q4-ff-spatial-vae,ft_places2-q4-all-spatial-vae=ft_places2-q4-all-spatial-vae' \
@@ -206,7 +206,7 @@ Scripts/run_benchmark_report.sh \
 
 ## UIKit Demo Integration
 
-The demo app uses the same `MoebiusPipeline.runImageRGBFloats` API as the CLI. It resolves model variants from bundle resources, Application Support, Documents, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, and the development model directory. `MOEBIUS_MODEL_ROOT` is kept as a demo/autorun compatibility alias for the shared resolver's `MOEBIUS_MLX_MODEL_DIR`. The Mac Catalyst autorun path is controlled by:
+The demo app uses the same `MoebiusPipeline.runImageRGBFloats` API as the CLI. It resolves model variants from bundle resources, Application Support, Documents, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, and an optional current-user development model folder when present for local testing. `MOEBIUS_MODEL_ROOT` is kept as a demo/autorun compatibility alias for the shared resolver's `MOEBIUS_MLX_MODEL_DIR`. The Mac Catalyst autorun path is controlled by:
 
 ```text
 MOEBIUS_DEMO_AUTORUN=1

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MODEL_ROOT="${MOEBIUS_MLX_MODEL_DIR:-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX}"
+MODEL_ROOT="${MOEBIUS_MLX_MODEL_DIR:-$REPO_ROOT/Models/Moebius-MLX}"
 RUN_DEMO_BUILDS=0
 RUN_ALL_INSPECTS=0
 FIDELITY_FIXTURE=""

@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image
 
 
-ROOT = Path("/Users/kylehowells/Developer/ML-Models/Moebius")
+ROOT = Path(os.environ.get("MOEBIUS_SOURCE_ROOT", Path.cwd()))
 CODE_ROOT = ROOT / "Moebius-Code"
 ONNX_ROOT = ROOT / "Moebius-ONNX"
 WEIGHTS_ROOT = ROOT / "Moebius-Models"

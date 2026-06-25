@@ -3,12 +3,19 @@ import MLX
 import MLXRandom
 import MLXNN
 
+// MARK: - MoebiusUnaryLayer
+
 protocol MoebiusUnaryLayer {
 	func callAsFunction(_ x: MLXArray) -> MLXArray
 }
 
-extension Conv2d: MoebiusUnaryLayer {}
-extension MoebiusQuantizedPointwiseConv2d: MoebiusUnaryLayer {}
+// MARK: - Conv2d + MoebiusUnaryLayer
+
+extension Conv2d: MoebiusUnaryLayer { }
+
+// MARK: - MoebiusQuantizedPointwiseConv2d + MoebiusUnaryLayer
+
+extension MoebiusQuantizedPointwiseConv2d: MoebiusUnaryLayer { }
 
 func moebiusUpsampleNearest(_ x: MLXArray, scale: Int = 2) -> MLXArray {
 	precondition(x.ndim == 4)
@@ -20,6 +27,8 @@ func moebiusUpsampleNearest(_ x: MLXArray, scale: Int = 2) -> MLXArray {
 	y = y.reshaped(b, h * scale, w * scale, c)
 	return y
 }
+
+// MARK: - MoebiusVAEAttention
 
 final class MoebiusVAEAttention: Module, MoebiusUnaryLayer {
 	@ModuleInfo(key: "group_norm") var groupNorm: GroupNorm
@@ -54,6 +63,8 @@ final class MoebiusVAEAttention: Module, MoebiusUnaryLayer {
 	}
 }
 
+// MARK: - MoebiusResnetBlock2D
+
 final class MoebiusResnetBlock2D: Module, MoebiusUnaryLayer {
 	@ModuleInfo(key: "norm1") var norm1: GroupNorm
 	@ModuleInfo(key: "conv1") var conv1: any Module & MoebiusUnaryLayer
@@ -85,6 +96,8 @@ final class MoebiusResnetBlock2D: Module, MoebiusUnaryLayer {
 		return y + x
 	}
 }
+
+// MARK: - MoebiusEncoderDecoderBlock2D
 
 final class MoebiusEncoderDecoderBlock2D: Module, MoebiusUnaryLayer {
 	@ModuleInfo(key: "resnets") var resnets: [MoebiusResnetBlock2D]
@@ -129,6 +142,8 @@ final class MoebiusEncoderDecoderBlock2D: Module, MoebiusUnaryLayer {
 		return y
 	}
 }
+
+// MARK: - MoebiusVAEncoder
 
 final class MoebiusVAEncoder: Module, MoebiusUnaryLayer {
 	@ModuleInfo(key: "conv_in") var convIn: any Module & MoebiusUnaryLayer
@@ -176,6 +191,8 @@ final class MoebiusVAEncoder: Module, MoebiusUnaryLayer {
 	}
 }
 
+// MARK: - MoebiusVADecoder
+
 final class MoebiusVADecoder: Module, MoebiusUnaryLayer {
 	@ModuleInfo(key: "conv_in") var convIn: any Module & MoebiusUnaryLayer
 	@ModuleInfo(key: "mid_blocks") var midBlocks: (MoebiusResnetBlock2D, MoebiusVAEAttention, MoebiusResnetBlock2D)
@@ -222,6 +239,9 @@ final class MoebiusVADecoder: Module, MoebiusUnaryLayer {
 	}
 }
 
+// MARK: - MoebiusAutoencoder
+
+/// Moebius variational autoencoder used to encode images into latents and decode latents into images.
 public final class MoebiusAutoencoder: Module, @unchecked Sendable {
 	let scalingFactor: Float
 	let encoder: MoebiusVAEncoder
@@ -229,6 +249,7 @@ public final class MoebiusAutoencoder: Module, @unchecked Sendable {
 	@ModuleInfo(key: "quant_proj") var quantProjection: Linear
 	@ModuleInfo(key: "post_quant_proj") var postQuantProjection: Linear
 
+	/// Creates a Moebius autoencoder with the checkpoint scaling factor.
 	public init(scalingFactor: Float = 0.13025) {
 		self.scalingFactor = scalingFactor
 		let blockOutChannels: [Int] = [128, 256, 512, 512]
@@ -250,16 +271,19 @@ public final class MoebiusAutoencoder: Module, @unchecked Sendable {
 		self._postQuantProjection.wrappedValue = Linear(4, 4)
 	}
 
+	/// Encodes an image tensor into VAE distribution moments.
 	public func encodeMoments(_ image: MLXArray) -> MLXArray {
 		return self.quantProjection(self.encoder(image))
 	}
 
+	/// Encodes an image tensor into deterministic mean latents.
 	public func encodeMean(_ image: MLXArray) -> MLXArray {
 		let moments: MLXArray = self.encodeMoments(image)
 		let (mean, _) = moments.split(axis: -1)
 		return mean * MLXArray(self.scalingFactor).asType(moments.dtype)
 	}
 
+	/// Encodes an image tensor by sampling from the VAE latent distribution.
 	public func encodeSample(_ image: MLXArray) -> MLXArray {
 		let moments: MLXArray = self.encodeMoments(image)
 		let (mean, logvar) = moments.split(axis: -1)
@@ -269,6 +293,7 @@ public final class MoebiusAutoencoder: Module, @unchecked Sendable {
 		return sample * MLXArray(self.scalingFactor).asType(moments.dtype)
 	}
 
+	/// Decodes scaled latent tensors into image tensors normalized around `[-1, 1]`.
 	public func decode(_ latent: MLXArray) -> MLXArray {
 		let scaled: MLXArray = latent / MLXArray(self.scalingFactor).asType(latent.dtype)
 		return self.decoder(self.postQuantProjection(scaled))

@@ -51,7 +51,7 @@ def materialize(root: Path, name: str, source_name: str, updates: dict) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=Path("/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX"))
+    parser.add_argument("--root", type=Path, default=Path(os.environ.get("MOEBIUS_MLX_MODEL_DIR", Path.cwd() / "Models" / "Moebius-MLX")))
     args = parser.parse_args()
 
     candidates = {

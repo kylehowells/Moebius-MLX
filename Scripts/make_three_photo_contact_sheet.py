@@ -9,6 +9,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+import os
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -248,7 +249,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-dir", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--model-root", default="/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX")
+    parser.add_argument("--model-root", default=os.environ.get("MOEBIUS_MLX_MODEL_DIR", str(Path.cwd() / "Models" / "Moebius-MLX")))
     parser.add_argument("--steps", default="20")
     parser.add_argument("--seed", default="7")
     args = parser.parse_args()

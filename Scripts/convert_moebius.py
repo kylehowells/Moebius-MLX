@@ -7,11 +7,12 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
+import os
 
 import torch
 
 
-ROOT = Path("/Users/kylehowells/Developer/ML-Models/Moebius")
+ROOT = Path(os.environ.get("MOEBIUS_SOURCE_ROOT", Path.cwd()))
 DEFAULT_WEIGHTS = ROOT / "Moebius-Models"
 DEFAULT_OUT = ROOT / "Moebius-MLX"
 DEFAULT_VAE = ROOT / "PixelHacker" / "vae" / "diffusion_pytorch_model.bin"

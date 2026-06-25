@@ -2,22 +2,33 @@ import Foundation
 import MLX
 import MLXRandom
 
+// MARK: - MoebiusImageInput
+
+/// Image and mask tensors used by the Moebius image pipeline.
 public struct MoebiusImageInput {
+	/// Source image tensor shaped `[1, 512, 512, 3]` in NHWC order, normalized to `[-1, 1]`.
 	public var image: MLXArray
+	/// Mask tensor shaped `[1, 512, 512, 1]` in NHWC order, where `1` means replace.
 	public var mask: MLXArray
 
+	/// Creates input from already prepared MLX tensors.
 	public init(image: MLXArray, mask: MLXArray) {
 		self.image = image
 		self.mask = mask
 	}
 
+	/// Creates input from flat NHWC Float arrays.
 	public init(imageNHWC: [Float], maskNHWC: [Float]) {
 		self.image = MLXArray(imageNHWC, [1, MoebiusImageTensors.imageSize, MoebiusImageTensors.imageSize, 3])
 		self.mask = MLXArray(maskNHWC, [1, MoebiusImageTensors.imageSize, MoebiusImageTensors.imageSize, 1])
 	}
 }
 
+/// Image-space inpainting entry points for `MoebiusPipeline`.
 public extension MoebiusPipeline {
+	/// Runs image inpainting and returns a decoded image tensor.
+	///
+	/// The returned tensor is shaped `[1, 512, 512, 3]` in NHWC order and normalized to `[-1, 1]`.
 	func runImage(
 		input: MoebiusImageInput,
 		options: MoebiusGenerationOptions,
@@ -77,6 +88,7 @@ public extension MoebiusPipeline {
 		return decoded
 	}
 
+	/// Runs image inpainting and returns clamped RGB floats in `[0, 1]`.
 	func runImageRGBFloats(
 		input: MoebiusImageInput,
 		options: MoebiusGenerationOptions,
@@ -87,10 +99,16 @@ public extension MoebiusPipeline {
 	}
 }
 
+// MARK: - MoebiusImageTensors
+
+/// Tensor constants and conversion helpers for Moebius image generation.
 public enum MoebiusImageTensors {
+	/// Required source image size in pixels.
 	public static let imageSize: Int = 512
+	/// Latent spatial size used by the UNet and VAE.
 	public static let latentSize: Int = 64
 
+	/// Downsamples a `[1, 512, 512, 1]` image mask into latent-space mask shape `[1, 64, 64, 1]`.
 	public static func maskToLatent(_ mask: MLXArray) -> MLXArray {
 		precondition(mask.shape == [1, Self.imageSize, Self.imageSize, 1])
 		eval(mask)
@@ -105,6 +123,7 @@ public enum MoebiusImageTensors {
 		return MLXArray(latent, [1, Self.latentSize, Self.latentSize, 1])
 	}
 
+	/// Creates initial latent noise for a generation run.
 	public static func initialLatents(seed: UInt64?, noiseOffset: Float, dtype: DType) -> MLXArray {
 		if let seed {
 			MLXRandom.seed(seed)
@@ -114,6 +133,7 @@ public enum MoebiusImageTensors {
 		return latents + (MLXArray(noiseOffset).asType(dtype) * offset)
 	}
 
+	/// Applies a separable Gaussian blur to an image-space mask.
 	public static func gaussianBlurredMask(_ mask: MLXArray, radius: Float) -> MLXArray {
 		precondition(mask.shape == [1, Self.imageSize, Self.imageSize, 1])
 		eval(mask)
@@ -152,6 +172,7 @@ public enum MoebiusImageTensors {
 		return MLXArray(output, [1, size, size, 1])
 	}
 
+	/// Converts a decoded NHWC image tensor from `[-1, 1]` into a flat `[0, 1]` RGB array.
 	public static func nhwcImageToFloatArray(_ image: MLXArray) -> [Float] {
 		let clipped: MLXArray = clip((image.asType(.float32) + 1) / 2, min: 0, max: 1)
 		eval(clipped)

@@ -88,7 +88,7 @@ done
 	swift build --product moebius-mlx >/dev/null
 )
 CLI="$ROOT_DIR/.build/debug/moebius-mlx"
-MODEL_ROOT="/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX"
+MODEL_ROOT="${MOEBIUS_MLX_MODEL_DIR:-$ROOT_DIR/Models/Moebius-MLX}"
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/moebius-image-benchmark-variants.XXXXXX")"
 trap 'rm -rf "$TEMP_ROOT"' EXIT
 

@@ -6,6 +6,7 @@ func moebiusTimestepEmbedding(_ timesteps: MLXArray, dimensions: Int, dtype: DTy
 	let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 	func traceEval(_ label: String, _ value: MLXArray) {
 		guard trace else { return }
+
 		FileHandle.standardError.write(Data("[time] \(label): \(value.shape)\n".utf8))
 		eval(value)
 	}
@@ -23,6 +24,8 @@ func moebiusTimestepEmbedding(_ timesteps: MLXArray, dimensions: Int, dtype: DTy
 	}
 	return embedding.asType(dtype)
 }
+
+// MARK: - MoebiusDepthwiseSeparableConv
 
 final class MoebiusDepthwiseSeparableConv: Module, MoebiusUnaryLayer {
 	let hasSkip: Bool
@@ -54,6 +57,8 @@ final class MoebiusDepthwiseSeparableConv: Module, MoebiusUnaryLayer {
 		return self.hasSkip ? y + x : y
 	}
 }
+
+// MARK: - MoebiusDWResnetBlock
 
 final class MoebiusDWResnetBlock: Module {
 	@ModuleInfo(key: "norm1") var norm1: GroupNorm
@@ -88,6 +93,8 @@ final class MoebiusDWResnetBlock: Module {
 		return y + x
 	}
 }
+
+// MARK: - MoebiusSelfLambda
 
 final class MoebiusSelfLambda: Module {
 	let heads: Int
@@ -132,6 +139,8 @@ final class MoebiusSelfLambda: Module {
 	}
 }
 
+// MARK: - MoebiusCrossLambda
+
 final class MoebiusCrossLambda: Module {
 	let heads: Int
 	let dimK: Int
@@ -161,6 +170,7 @@ final class MoebiusCrossLambda: Module {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
+
 			FileHandle.standardError.write(Data("[cross] \(label): \(value.shape)\n".utf8))
 			eval(value)
 		}
@@ -183,11 +193,15 @@ final class MoebiusCrossLambda: Module {
 		let position: MLXArray = (
 			q.expandedDimensions(axis: 4)
 				* lambdaPosition.transposed(0, 2, 1, 3).expandedDimensions(axis: 1)
-		).sum(axis: 2).transposed(0, 1, 3, 2)
+		)
+		.sum(axis: 2)
+		.transposed(0, 1, 3, 2)
 		let y: MLXArray = content + position
 		return y.transposed(0, 3, 1, 2).reshaped(b, h, w, self.heads * self.dimV)
 	}
 }
+
+// MARK: - MoebiusConvLayer
 
 final class MoebiusConvLayer: Module, MoebiusUnaryLayer {
 	@ModuleInfo(key: "conv") var conv: any Module & MoebiusUnaryLayer
@@ -208,6 +222,8 @@ final class MoebiusConvLayer: Module, MoebiusUnaryLayer {
 	}
 }
 
+// MARK: - MoebiusMixFFN
+
 final class MoebiusMixFFN: Module {
 	@ModuleInfo(key: "inverted_conv") var inverted: MoebiusConvLayer
 	@ModuleInfo(key: "depth_conv") var depthwise: MoebiusConvLayer
@@ -223,7 +239,7 @@ final class MoebiusMixFFN: Module {
 		let b: Int = x.dim(0)
 		let n: Int = x.dim(1)
 		let c: Int = x.dim(2)
-		let h: Int = Int(Double(n).squareRoot())
+		let h: Int = .init(Double(n).squareRoot())
 		var y: MLXArray = x.reshaped(b, h, h, c)
 		y = self.depthwise(silu(self.inverted(y)))
 		let parts: [MLXArray] = y.split(parts: 2, axis: -1)
@@ -232,6 +248,8 @@ final class MoebiusMixFFN: Module {
 		return y.reshaped(b, n, c)
 	}
 }
+
+// MARK: - MoebiusTransformerBlock
 
 final class MoebiusTransformerBlock: Module {
 	@ModuleInfo(key: "norm1") var norm1: LayerNorm
@@ -254,6 +272,7 @@ final class MoebiusTransformerBlock: Module {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
+
 			FileHandle.standardError.write(Data("[tfblock] \(label): \(value.shape)\n".utf8))
 			eval(value)
 		}
@@ -277,6 +296,8 @@ final class MoebiusTransformerBlock: Module {
 	}
 }
 
+// MARK: - MoebiusTransformer2D
+
 final class MoebiusTransformer2D: Module {
 	@ModuleInfo(key: "norm") var norm: GroupNorm
 	@ModuleInfo(key: "proj_in") var projectionIn: any Module & MoebiusUnaryLayer
@@ -294,6 +315,7 @@ final class MoebiusTransformer2D: Module {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
+
 			FileHandle.standardError.write(Data("[tf2d] \(label): \(value.shape)\n".utf8))
 			eval(value)
 		}
@@ -310,6 +332,8 @@ final class MoebiusTransformer2D: Module {
 	}
 }
 
+// MARK: - MoebiusSpatialConvolution
+
 final class MoebiusSpatialConvolution: Module, MoebiusUnaryLayer {
 	@ModuleInfo(key: "conv") var conv: any Module & MoebiusUnaryLayer
 
@@ -321,6 +345,8 @@ final class MoebiusSpatialConvolution: Module, MoebiusUnaryLayer {
 		self.conv(x)
 	}
 }
+
+// MARK: - MoebiusDownBlock
 
 final class MoebiusDownBlock: Module {
 	@ModuleInfo(key: "resnets") var resnets: [MoebiusDWResnetBlock]
@@ -346,6 +372,7 @@ final class MoebiusDownBlock: Module {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
+
 			FileHandle.standardError.write(Data("[down] \(label): \(value.shape)\n".utf8))
 			eval(value)
 		}
@@ -365,6 +392,8 @@ final class MoebiusDownBlock: Module {
 		return (y, outputs)
 	}
 }
+
+// MARK: - MoebiusUpBlock
 
 final class MoebiusUpBlock: Module {
 	@ModuleInfo(key: "resnets") var resnets: [MoebiusDWResnetBlock]
@@ -405,6 +434,8 @@ final class MoebiusUpBlock: Module {
 	}
 }
 
+// MARK: - MoebiusTimeEmbedding
+
 final class MoebiusTimeEmbedding: Module {
 	@ModuleInfo(key: "linear_1") var linear1: Linear
 	@ModuleInfo(key: "linear_2") var linear2: Linear
@@ -419,6 +450,11 @@ final class MoebiusTimeEmbedding: Module {
 	}
 }
 
+// MARK: - MoebiusUNet
+
+/// Moebius UNet denoiser.
+///
+/// Most apps use this through `MoebiusPipeline` rather than calling the module directly.
 public final class MoebiusUNet: Module {
 	@ModuleInfo(key: "embedding_layer") var embedding: Embedding
 	@ModuleInfo(key: "conv_in") var convIn: MoebiusDepthwiseSeparableConv
@@ -429,6 +465,7 @@ public final class MoebiusUNet: Module {
 	@ModuleInfo(key: "conv_norm_out") var convNormOut: GroupNorm
 	@ModuleInfo(key: "conv_out") var convOut: MoebiusDepthwiseSeparableConv
 
+	/// Creates an unloaded Moebius UNet module with the public checkpoint architecture.
 	public override init() {
 		self._embedding.wrappedValue = Embedding(embeddingCount: 20, dimensions: 3072)
 		self._convIn.wrappedValue = MoebiusDepthwiseSeparableConv(inputChannels: 9, outputChannels: 320)
@@ -448,10 +485,12 @@ public final class MoebiusUNet: Module {
 		self._convOut.wrappedValue = MoebiusDepthwiseSeparableConv(inputChannels: 320, outputChannels: 4)
 	}
 
+	/// Runs the UNet denoiser.
 	public func callAsFunction(latent: MLXArray, timesteps: MLXArray, inputIDs: MLXArray) -> MLXArray {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
+
 			FileHandle.standardError.write(Data("[unet] \(label): \(value.shape)\n".utf8))
 			eval(value)
 		}
@@ -484,6 +523,7 @@ public final class MoebiusUNet: Module {
 		return y
 	}
 
+	/// Returns diagnostic activation statistics for a zero input.
 	public func debugZeroStats(timestep: Int = 900) -> [(String, [Int], Float, Float, Float)] {
 		func stats(_ name: String, _ value: MLXArray) -> (String, [Int], Float, Float, Float) {
 			eval(value)
@@ -494,9 +534,9 @@ public final class MoebiusUNet: Module {
 			return (name, value.shape, minValue, maxValue, meanValue)
 		}
 
-		let latent: MLXArray = MLXArray.zeros([2, 64, 64, 9], dtype: .float32)
-		let timesteps: MLXArray = MLXArray([timestep, timestep])
-		let inputIDs: MLXArray = MLXArray(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
+		let latent: MLXArray = .zeros([2, 64, 64, 9], dtype: .float32)
+		let timesteps: MLXArray = .init([timestep, timestep])
+		let inputIDs: MLXArray = .init(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
 		var result: [(String, [Int], Float, Float, Float)] = []
 
 		var timeEmbedding: MLXArray = moebiusTimestepEmbedding(timesteps, dimensions: 320, dtype: .float32)
@@ -557,7 +597,9 @@ public final class MoebiusUNet: Module {
 			let position: MLXArray = (
 				q.expandedDimensions(axis: 4)
 					* lambdaPosition.transposed(0, 2, 1, 3).expandedDimensions(axis: 1)
-			).sum(axis: 2).transposed(0, 1, 3, 2)
+			)
+			.sum(axis: 2)
+			.transposed(0, 1, 3, 2)
 			result.append(stats("down0.attn0.cross.position", position))
 		}
 		let afterCross = afterSelf + crossOut

@@ -87,7 +87,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$OUTPUT_DIR" ]; then
-	OUTPUT_DIR="/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX-benchmarks/reports/${FAMILY}-image-${REFERENCE_LABEL}-steps${STEPS}-$(date +%Y%m%d-%H%M%S)"
+	OUTPUT_DIR="$ROOT_DIR/BenchmarkReports/${FAMILY}-image-${REFERENCE_LABEL}-steps${STEPS}-$(date +%Y%m%d-%H%M%S)"
 fi
 mkdir -p "$OUTPUT_DIR"
 

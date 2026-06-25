@@ -4,7 +4,7 @@ import MLX
 @testable import MoebiusMLX
 
 @Test func schedulerProducesDescendingTimesteps() async throws {
-	let scheduler: MoebiusDDIMScheduler = MoebiusDDIMScheduler()
+	let scheduler: MoebiusDDIMScheduler = .init()
 	let timesteps: [Int] = scheduler.timesteps(steps: 5)
 	#expect(timesteps == [600, 400, 200, 0])
 }
@@ -20,14 +20,15 @@ import MLX
 
 @Test func runtimeSupportsModelExecutionOnHost() async throws {
 	#if os(iOS) && targetEnvironment(simulator)
-		#expect(MoebiusRuntime.supportsModelExecution == false)
+	#expect(MoebiusRuntime.supportsModelExecution == false)
 	#else
-		#expect(MoebiusRuntime.supportsModelExecution == true)
+	#expect(MoebiusRuntime.supportsModelExecution == true)
 	#endif
 }
 
 @Test func resolverFindsPreferredDirectoryLayouts() async throws {
-	let temporaryRoot: URL = FileManager.default.temporaryDirectory
+	let temporaryRoot: URL = FileManager.default
+		.temporaryDirectory
 		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
 	defer {
 		try? FileManager.default.removeItem(at: temporaryRoot)
@@ -50,7 +51,8 @@ import MLX
 }
 
 @Test func resolverFindsExplicitModelRootAndReportsMissingCandidates() async throws {
-	let temporaryRoot: URL = FileManager.default.temporaryDirectory
+	let temporaryRoot: URL = FileManager.default
+		.temporaryDirectory
 		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
 	defer {
 		try? FileManager.default.removeItem(at: temporaryRoot)
@@ -68,7 +70,7 @@ import MLX
 		_ = try MoebiusModelResolver.resolve(name: "definitely_missing_\(UUID().uuidString)", modelRoot: modelRoot)
 		Issue.record("Expected missing model resolution to throw.")
 	}
-	catch MoebiusError.modelNotFound(let name, let paths) {
+	catch let MoebiusError.modelNotFound(name, paths) {
 		#expect(name.hasPrefix("definitely_missing_"))
 		#expect(paths.contains { path in
 			path.contains("Documents/Moebius-MLX") || path.contains("Documents")
@@ -83,7 +85,8 @@ import MLX
 }
 
 @Test func resolverFindsEnvironmentModelRoots() async throws {
-	let temporaryRoot: URL = FileManager.default.temporaryDirectory
+	let temporaryRoot: URL = FileManager.default
+		.temporaryDirectory
 		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
 	defer {
 		try? FileManager.default.removeItem(at: temporaryRoot)
@@ -138,7 +141,8 @@ import MLX
 }
 
 @Test func resolverAcceptsManifestFileAndDirectorySourcesBeforeHub() async throws {
-	let temporaryRoot: URL = FileManager.default.temporaryDirectory
+	let temporaryRoot: URL = FileManager.default
+		.temporaryDirectory
 		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
 	defer {
 		try? FileManager.default.removeItem(at: temporaryRoot)
@@ -154,7 +158,8 @@ import MLX
 }
 
 @Test func deploymentInfoUsesManifestSelectedFilesAndResolvesSymlinks() async throws {
-	let temporaryRoot: URL = FileManager.default.temporaryDirectory
+	let temporaryRoot: URL = FileManager.default
+		.temporaryDirectory
 		.appendingPathComponent("MoebiusMLXTests-\(UUID().uuidString)", isDirectory: true)
 	defer {
 		try? FileManager.default.removeItem(at: temporaryRoot)
@@ -176,7 +181,7 @@ import MLX
 	try Data(repeating: 5, count: 17).write(to: modelDirectory.appendingPathComponent("vae_encoder_quantized.safetensors"))
 	try Data(repeating: 6, count: 19).write(to: modelDirectory.appendingPathComponent("vae_decoder_quantized.safetensors"))
 
-	let manifest: MoebiusModelManifest = MoebiusModelManifest(
+	let manifest: MoebiusModelManifest = .init(
 		formatVersion: 1,
 		modelName: "test",
 		sourceCheckpoint: "source",
@@ -208,7 +213,7 @@ import MLX
 	try JSONEncoder().encode(manifest).write(to: manifestURL)
 
 	let info: MoebiusModelDeploymentInfo = try MoebiusModelDeploymentInfo.load(from: modelDirectory)
-	let manifestBytes: Int64 = Int64(try Data(contentsOf: manifestURL).count)
+	let manifestBytes: Int64 = try Int64(Data(contentsOf: manifestURL).count)
 
 	#expect(info.unetBytes == 13)
 	#expect(info.vaeBytes == 36)
@@ -238,9 +243,9 @@ import MLX
 		Float((index % 7) - 3) / 101.0
 	}
 
-	let input: MLXArray = MLXArray(inputValues).reshaped(batch, height, width, inputChannels)
-	let convWeight: MLXArray = MLXArray(weightValues).reshaped(outputChannels, 1, 1, inputChannels)
-	let bias: MLXArray = MLXArray(biasValues)
+	let input: MLXArray = .init(inputValues).reshaped(batch, height, width, inputChannels)
+	let convWeight: MLXArray = .init(weightValues).reshaped(outputChannels, 1, 1, inputChannels)
+	let bias: MLXArray = .init(biasValues)
 
 	let layer = MoebiusQuantizedPointwiseConv2d(
 		floatWeight: convWeight,
@@ -284,9 +289,9 @@ import MLX
 		Float((index % 11) - 5) / 101.0
 	}
 
-	let input: MLXArray = MLXArray(inputValues).reshaped(batch, height, width, inputChannels)
-	let convWeight: MLXArray = MLXArray(weightValues).reshaped(outputChannels, kernel, kernel, inputChannels)
-	let bias: MLXArray = MLXArray(biasValues)
+	let input: MLXArray = .init(inputValues).reshaped(batch, height, width, inputChannels)
+	let convWeight: MLXArray = .init(weightValues).reshaped(outputChannels, kernel, kernel, inputChannels)
+	let bias: MLXArray = .init(biasValues)
 
 	let layer = MoebiusQuantizedPointwiseConv2d(
 		floatWeight: convWeight,
@@ -311,51 +316,64 @@ import MLX
 }
 
 @Test func pointwiseConvQuantizationIsExplicitOptIn() async throws {
-	let baseline: MoebiusUNet = MoebiusUNet()
+	let baseline: MoebiusUNet = .init()
 	MoebiusModel.applyQuantizationIfNeeded(to: baseline, precision: .q8)
-	let baselinePackedCount: Int = baseline.leafModules().flattened().filter { _, module in
-		module is MoebiusQuantizedPointwiseConv2d
-	}.count
+	let baselinePackedCount: Int = baseline.leafModules()
+		.flattened()
+		.filter { _, module in
+			module is MoebiusQuantizedPointwiseConv2d
+		}
+		.count
 	#expect(baselinePackedCount == 0)
 
-	let packed: MoebiusUNet = MoebiusUNet()
+	let packed: MoebiusUNet = .init()
 	MoebiusModel.applyQuantizationIfNeeded(to: packed, precision: .q8, includePointwiseConvolutions: true)
-	let packedCount: Int = packed.leafModules().flattened().filter { _, module in
-		module is MoebiusQuantizedPointwiseConv2d
-	}.count
+	let packedCount: Int = packed.leafModules()
+		.flattened()
+		.filter { _, module in
+			module is MoebiusQuantizedPointwiseConv2d
+		}
+		.count
 	#expect(packedCount > 0)
 
-	let feedForwardOnly: MoebiusUNet = MoebiusUNet()
+	let feedForwardOnly: MoebiusUNet = .init()
 	MoebiusModel.applyQuantizationIfNeeded(
 		to: feedForwardOnly,
 		precision: .q8,
 		includePointwiseConvolutions: true,
 		pointwiseConvolutionPolicy: "feedforward"
 	)
-	let feedForwardCount: Int = feedForwardOnly.leafModules().flattened().filter { _, module in
-		module is MoebiusQuantizedPointwiseConv2d
-	}.count
+	let feedForwardCount: Int = feedForwardOnly.leafModules()
+		.flattened()
+		.filter { _, module in
+			module is MoebiusQuantizedPointwiseConv2d
+		}
+		.count
 	#expect(feedForwardCount > 0)
 	#expect(feedForwardCount < packedCount)
 
-	let spatialOnly: MoebiusUNet = MoebiusUNet()
+	let spatialOnly: MoebiusUNet = .init()
 	MoebiusModel.applyQuantizationIfNeeded(
 		to: spatialOnly,
 		precision: .q8,
 		includeSpatialConvolutions: true,
 		spatialConvolutionPolicy: "spatial"
 	)
-	let spatialCount: Int = spatialOnly.leafModules().flattened().filter { _, module in
-		guard let conv = module as? MoebiusQuantizedPointwiseConv2d else {
-			return false
+	let spatialCount: Int = spatialOnly.leafModules()
+		.flattened()
+		.filter { _, module in
+			guard let conv = module as? MoebiusQuantizedPointwiseConv2d else {
+				return false
+			}
+
+			return conv.kernelHeight != 1 || conv.kernelWidth != 1
 		}
-		return conv.kernelHeight != 1 || conv.kernelWidth != 1
-	}.count
+		.count
 	#expect(spatialCount > 0)
 }
 
 @Test func vaeConvQuantizationIsExplicitOptIn() async throws {
-	let autoencoder: MoebiusAutoencoder = MoebiusAutoencoder()
+	let autoencoder: MoebiusAutoencoder = .init()
 	MoebiusModel.applyQuantizationIfNeeded(
 		to: autoencoder,
 		precision: .q8,
@@ -364,8 +382,11 @@ import MLX
 		includeSpatialConvolutions: true,
 		spatialConvolutionPolicy: "vae-conv"
 	)
-	let packedConvCount: Int = autoencoder.leafModules().flattened().filter { _, module in
-		module is MoebiusQuantizedPointwiseConv2d
-	}.count
+	let packedConvCount: Int = autoencoder.leafModules()
+		.flattened()
+		.filter { _, module in
+			module is MoebiusQuantizedPointwiseConv2d
+		}
+		.count
 	#expect(packedConvCount > 0)
 }

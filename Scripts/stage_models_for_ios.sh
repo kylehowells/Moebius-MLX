@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL_ROOT="${MOEBIUS_MLX_MODEL_DIR:-/Users/kylehowells/Developer/ML-Models/Moebius/Moebius-MLX}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+MODEL_ROOT="${MOEBIUS_MLX_MODEL_DIR:-$REPO_ROOT/Models/Moebius-MLX}"
 OUTPUT_DIR=""
 INCLUDE_SOURCE_UNET=0
 variants=()

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DEVICE_ID="${MOEBIUS_DEVICE_ID:-4B1F3A7A-CB7A-5D9A-85FF-D7578C7EC4C1}"
-BUNDLE_ID="${MOEBIUS_DEMO_BUNDLE_ID:-com.ikyle.MoebiusDemo}"
+DEVICE_ID="${MOEBIUS_DEVICE_ID:-}"
+BUNDLE_ID="${MOEBIUS_DEMO_BUNDLE_ID:-org.moebiusmlx.MoebiusDemo}"
 MODEL="${MOEBIUS_DEMO_MODEL:-ft_places2}"
 PRECISION="${MOEBIUS_DEMO_PRECISION:-q4}"
 STEPS="${MOEBIUS_DEMO_STEPS:-2}"
@@ -32,7 +32,7 @@ copies the staged Moebius-MLX folder into the app Documents container, launches
 the app with MOEBIUS_DEMO_AUTORUN=1, and reads back the autorun status file.
 
 Options:
-  --device ID        CoreDevice id. Default: $DEVICE_ID
+  --device ID        CoreDevice id. Defaults to MOEBIUS_DEVICE_ID.
   --bundle-id ID     App bundle id. Default: $BUNDLE_ID
   --variant NAME     Full model variant, e.g. ft_places2-q4.
                     Overrides --model/--precision when supplied.
@@ -259,6 +259,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	done
 	printf 'launch_environment: %s\n' "$launch_environment"
 	exit 0
+fi
+
+if [ -z "$DEVICE_ID" ]; then
+	printf 'Missing device id. Pass --device ID or set MOEBIUS_DEVICE_ID.\n' >&2
+	exit 2
 fi
 
 device_line=""

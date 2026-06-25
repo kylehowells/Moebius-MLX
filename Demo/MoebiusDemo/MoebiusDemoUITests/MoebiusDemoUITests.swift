@@ -2,7 +2,6 @@
 //  MoebiusDemoUITests.swift
 //  MoebiusDemoUITests
 //
-//  Created by Kyle Howells on 2026-06-24.
 //
 
 import XCTest
@@ -15,7 +14,7 @@ final class MoebiusDemoUITests: XCTestCase {
 
 	@MainActor
 	func testMainScreenLabelsExplainControls() throws {
-		let app: XCUIApplication = XCUIApplication()
+		let app: XCUIApplication = .init()
 		app.launchEnvironment["MOEBIUS_DEMO_DISABLE_AUTORUN"] = "1"
 		app.launch()
 
@@ -27,7 +26,7 @@ final class MoebiusDemoUITests: XCTestCase {
 		XCTAssertTrue(app.buttons["Generate"].exists)
 
 		let optionsButton: XCUIElement = app.buttons["Options"]
-		if optionsButton.exists && optionsButton.isHittable {
+		if optionsButton.exists, optionsButton.isHittable {
 			optionsButton.tap()
 		}
 

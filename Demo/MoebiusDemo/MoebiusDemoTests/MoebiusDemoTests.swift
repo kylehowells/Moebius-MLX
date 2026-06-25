@@ -2,7 +2,6 @@
 //  MoebiusDemoTests.swift
 //  MoebiusDemoTests
 //
-//  Created by Kyle Howells on 2026-06-24.
 //
 
 import XCTest
@@ -59,10 +58,10 @@ final class MoebiusDemoTests: XCTestCase {
 			}
 		}
 
-		let data: Data = Data(rgba)
-		let provider: CGDataProvider = CGDataProvider(data: data as CFData)!
+		let data: Data = .init(rgba)
+		let provider: CGDataProvider = .init(data: data as CFData)!
 		let colorSpace: CGColorSpace = CGColorSpaceCreateDeviceRGB()
-		let image: CGImage = CGImage(
+		let image: CGImage = .init(
 			width: width,
 			height: height,
 			bitsPerComponent: 8,
