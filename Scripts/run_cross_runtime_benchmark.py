@@ -724,7 +724,7 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
             "",
         ]
     )
-    (args.output_dir / "summary.md").write_text("\n".join(lines), encoding="utf-8")
+    (args.output_dir / "README.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:

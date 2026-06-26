@@ -578,7 +578,7 @@ Scripts/run_benchmark_report.sh \
 It writes:
 
 - `benchmark.tsv`
-- `summary.md`
+- `README.md`
 - `fidelity_errors.png`
 - `performance_timings.png`
 - `model_size.png`
@@ -656,7 +656,7 @@ ft_places2-q4-all-spatial-vae 200.50  0.254395  0.95212305  17.438
 
 The checked-in graph report contains:
 
-- `summary.md`
+- `README.md`
 - `fidelity_errors.png`
 - `performance_timings.png`
 - `model_size.png`

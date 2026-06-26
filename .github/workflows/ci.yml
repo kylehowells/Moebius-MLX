@@ -79,11 +79,13 @@ jobs:
       - name: Check documentation artifacts
         run: |
           test -s README.md
+          test -s Docs/README.md
           test -s Docs/API.md
           test -s Docs/PROJECT.md
+          test -s Docs/BenchmarkReports/README.md
           report_dir="Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants"
           test -s "$report_dir/benchmark.tsv"
-          test -s "$report_dir/summary.md"
+          test -s "$report_dir/README.md"
           grep -q "ft_places2-q4-all-spatial-vae" "$report_dir/benchmark.tsv"
           grep -q "200.50" "$report_dir/benchmark.tsv"
           python3 - <<'PY'
@@ -105,7 +107,7 @@ jobs:
           cross_runtime = Path("Docs/BenchmarkReports/ft_places2-cross-runtime-steps20")
           for name in [
               "benchmark.csv",
-              "summary.md",
+              "README.md",
               "fidelity_errors.png",
               "performance_timings.png",
               "model_size.png",

@@ -219,7 +219,7 @@ log "Checking checked-in benchmark report artifacts"
 benchmark_report_dir="Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants"
 require_dir "$benchmark_report_dir"
 require_nonempty_file "$benchmark_report_dir/benchmark.tsv"
-require_nonempty_file "$benchmark_report_dir/summary.md"
+require_nonempty_file "$benchmark_report_dir/README.md"
 for chart in \
 	fidelity_errors.png \
 	performance_timings.png \
@@ -237,12 +237,12 @@ if ! grep -q '200.50' "$benchmark_report_dir/benchmark.tsv"; then
 	printf 'Benchmark TSV does not include the expected 200.50 MB package size.\n' >&2
 	exit 1
 fi
-printf 'Checked benchmark TSV, summary, and five PNG charts.\n'
+printf 'Checked benchmark TSV, README, and five PNG charts.\n'
 
 cross_runtime_report_dir="Docs/BenchmarkReports/ft_places2-cross-runtime-steps20"
 require_dir "$cross_runtime_report_dir"
 require_nonempty_file "$cross_runtime_report_dir/benchmark.csv"
-require_nonempty_file "$cross_runtime_report_dir/summary.md"
+require_nonempty_file "$cross_runtime_report_dir/README.md"
 for chart in \
 	fidelity_errors.png \
 	performance_timings.png \
@@ -295,9 +295,11 @@ fi
 printf 'Checked demo cleanup, SceneDelegate wiring, and storyboard-free main UI setup.\n'
 
 log "Checking final documentation references"
+require_nonempty_file "README.md"
+require_nonempty_file "Docs/README.md"
 require_nonempty_file "Docs/PROJECT.md"
 require_nonempty_file "Docs/API.md"
-require_nonempty_file "README.md"
+require_nonempty_file "Docs/BenchmarkReports/README.md"
 for expected in \
 	"MoebiusModelResolver" \
 	"MoebiusPipeline" \

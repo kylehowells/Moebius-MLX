@@ -26,7 +26,7 @@ Options:
 
 Outputs:
   benchmark.tsv
-  summary.md
+  README.md
   fidelity_errors.png
   performance_timings.png
   model_size.png

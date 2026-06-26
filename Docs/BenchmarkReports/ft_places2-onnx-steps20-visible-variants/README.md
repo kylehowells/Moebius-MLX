@@ -1,5 +1,7 @@
 # Moebius MLX ft_places2 onnx steps=20
 
+This is a supplemental historical report for the demo-visible MLX variants against an ONNX-generated latent fixture. The current public cross-runtime benchmark is in [../ft_places2-cross-runtime-steps20](../ft_places2-cross-runtime-steps20/).
+
 Source TSV: `benchmark.tsv`
 
 | variant | model MB | max abs | mean abs | RMSE | p99 abs | PSNR dB | cosine | inference s | load s | total s |

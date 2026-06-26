@@ -10,8 +10,10 @@ Swift and MLX port of Moebius image inpainting for Apple Silicon macOS, Mac Cata
 - `Sources/MoebiusMLXCLI`: `moebius-mlx` command-line tool.
 - `Demo/MoebiusDemo`: UIKit demo app for Mac Catalyst and iPadOS.
 - `Scripts`: conversion, validation, staging, and benchmark helpers.
+- `Docs/README.md`: documentation index.
 - `Docs/API.md`: detailed API and CLI notes.
 - `Docs/PROJECT.md`: implementation notes, benchmark results, and current limitations.
+- `Docs/BenchmarkReports`: checked-in benchmark CSV/TSV data, reports, and charts.
 
 ## Requirements
 
@@ -144,7 +146,7 @@ Each family has these standard precision variants:
 - `ft_places2-q4-ff-spatial-vae`: about 322 MB.
 - `ft_places2-q4-all-spatial-vae`: about 200 MB.
 
-The smaller candidates are useful for size experiments, but they trade away more fidelity than the default q4 package. See `Docs/PROJECT.md` and `Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants/summary.md` for the latest measured tradeoffs.
+The smaller candidates are useful for size experiments, but they trade away more fidelity than the default q4 package. See `Docs/PROJECT.md` and the supplemental [ft_places2 ONNX-visible variant report](Docs/BenchmarkReports/ft_places2-onnx-steps20-visible-variants/) for measured tradeoffs.
 
 ## Command Line
 
@@ -191,7 +193,7 @@ python3 -m venv .venv
 ./.venv/bin/python Scripts/run_cross_runtime_benchmark.py
 ```
 
-See [Scripts/README.md](Scripts/README.md) for benchmark options. The checked-in reference report is [Docs/BenchmarkReports/ft_places2-cross-runtime-steps20/summary.md](Docs/BenchmarkReports/ft_places2-cross-runtime-steps20/summary.md).
+See [Scripts/README.md](Scripts/README.md) for benchmark options. The checked-in reference report is [Docs/BenchmarkReports/ft_places2-cross-runtime-steps20](Docs/BenchmarkReports/ft_places2-cross-runtime-steps20/).
 
 ## Demo App
 

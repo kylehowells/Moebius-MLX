@@ -180,7 +180,7 @@ def write_summary(rows: list[dict[str, float | str]], output_dir: Path, source: 
             "",
         ]
     )
-    (output_dir / "summary.md").write_text("\n".join(lines))
+    (output_dir / "README.md").write_text("\n".join(lines))
 
 
 def main() -> None:
