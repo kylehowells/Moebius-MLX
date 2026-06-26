@@ -239,6 +239,33 @@ if ! grep -q '200.50' "$benchmark_report_dir/benchmark.tsv"; then
 fi
 printf 'Checked benchmark TSV, summary, and five PNG charts.\n'
 
+cross_runtime_report_dir="Docs/BenchmarkReports/ft_places2-cross-runtime-steps20"
+require_dir "$cross_runtime_report_dir"
+require_nonempty_file "$cross_runtime_report_dir/benchmark.csv"
+require_nonempty_file "$cross_runtime_report_dir/summary.md"
+for chart in \
+	fidelity_errors.png \
+	performance_timings.png \
+	model_size.png \
+	speed_fidelity_tradeoff.png \
+	size_fidelity_tradeoff.png \
+	latent_contact_sheet.png
+do
+	require_png "$cross_runtime_report_dir/$chart"
+done
+for expected in \
+	'PyTorch,pytorch' \
+	'ONNX,onnx' \
+	'ft_places2-f32,mlx' \
+	'ft_places2-q4-all-spatial-vae,mlx'
+do
+	if ! grep -q "$expected" "$cross_runtime_report_dir/benchmark.csv"; then
+		printf 'Cross-runtime benchmark CSV missing expected row: %s\n' "$expected" >&2
+		exit 1
+	fi
+done
+printf 'Checked cross-runtime benchmark CSV, summary, and six PNG charts.\n'
+
 log "Checking demo project cleanup and lifecycle wiring"
 if [ -d "Demo/MoebiusDemo---old" ]; then
 	printf 'Old broken demo project should have been removed: Demo/MoebiusDemo---old\n' >&2

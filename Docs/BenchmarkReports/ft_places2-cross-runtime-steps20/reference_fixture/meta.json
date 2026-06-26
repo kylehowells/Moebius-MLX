@@ -1,0 +1,11 @@
+{
+  "reference": "pytorch",
+  "model": "ft_places2",
+  "steps": 20,
+  "guidance": 2.0,
+  "strength": 0.99,
+  "seed": 0,
+  "noise_offset": 0.0357,
+  "scaling_factor": 0.13025,
+  "layout": "nchw"
+}

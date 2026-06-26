@@ -1,0 +1,19 @@
+{
+  "family": "ft_places2",
+  "steps": 20,
+  "seed": 0,
+  "guidance": 2.0,
+  "strength": 0.99,
+  "torch_device": "cpu",
+  "onnx_provider": "CPUExecutionProvider",
+  "mlx_variants": [
+    "ft_places2-f32",
+    "ft_places2-f16",
+    "ft_places2-q8",
+    "ft_places2-q4",
+    "ft_places2-mxfp8",
+    "ft_places2-mxfp4",
+    "ft_places2-q4-ff-spatial-vae",
+    "ft_places2-q4-all-spatial-vae"
+  ]
+}

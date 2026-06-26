@@ -72,6 +72,7 @@ jobs:
             Scripts/audit_model_size.py \
             Scripts/convert_moebius.py \
             Scripts/generate_reference_fixture.py \
+            Scripts/run_cross_runtime_benchmark.py \
             Scripts/materialize_candidate_variants.py \
             Scripts/plot_benchmark_report.py
 
@@ -100,4 +101,25 @@ jobs:
               data = path.read_bytes()
               if not data.startswith(b"\x89PNG\r\n\x1a\n"):
                   raise SystemExit(f"not a PNG: {path}")
+
+          cross_runtime = Path("Docs/BenchmarkReports/ft_places2-cross-runtime-steps20")
+          for name in [
+              "benchmark.csv",
+              "summary.md",
+              "fidelity_errors.png",
+              "performance_timings.png",
+              "model_size.png",
+              "speed_fidelity_tradeoff.png",
+              "size_fidelity_tradeoff.png",
+              "latent_contact_sheet.png",
+          ]:
+              path = cross_runtime / name
+              if not path.exists() or path.stat().st_size == 0:
+                  raise SystemExit(f"missing benchmark artifact: {path}")
+              if path.suffix == ".png" and not path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+                  raise SystemExit(f"not a PNG: {path}")
+          csv_text = (cross_runtime / "benchmark.csv").read_text()
+          for expected in ["PyTorch,pytorch", "ONNX,onnx", "ft_places2-f32,mlx", "ft_places2-q4-all-spatial-vae,mlx"]:
+              if expected not in csv_text:
+                  raise SystemExit(f"missing cross-runtime row: {expected}")
           PY

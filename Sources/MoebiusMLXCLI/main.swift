@@ -877,6 +877,9 @@ struct BenchmarkFixture: ParsableCommand {
 	@Option(help: "Input fixture layout: nchw or nhwc.")
 	var layout: String = "nchw"
 
+	@Option(help: "Optional path to write the computed final latent tensor as raw f32 NHWC.")
+	var outputLatents: String?
+
 	func run() throws {
 		let directory: URL = try Self.resolveModelDirectory(self.model)
 		let fixtureURL: URL = .init(fileURLWithPath: self.fixture, isDirectory: true)
@@ -928,6 +931,14 @@ struct BenchmarkFixture: ParsableCommand {
 		let duration: TimeInterval = Date().timeIntervalSince(startedAt)
 		let totalDuration: TimeInterval = Date().timeIntervalSince(loadStartedAt)
 		let values: [Float] = result.asType(.float32).asArray(Float.self)
+		if let outputLatents {
+			let outputURL: URL = .init(fileURLWithPath: outputLatents)
+			try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+			let data: Data = values.withUnsafeBufferPointer { buffer in
+				Data(buffer: buffer)
+			}
+			try data.write(to: outputURL)
+		}
 		let diff: TensorDiff = .init(values: values, reference: referenceLatents)
 		let sizes: MoebiusModelDeploymentInfo = try MoebiusModelDeploymentInfo(directory: directory, manifest: loaded.manifest)
 

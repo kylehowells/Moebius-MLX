@@ -181,6 +181,18 @@ Scripts/verify_local.sh
 
 Most scripts use `Models/Moebius-MLX` by default for local converted artifacts. Set `MOEBIUS_MLX_MODEL_DIR` to point at a different model root.
 
+## Benchmarks
+
+The portable cross-runtime benchmark compares PyTorch, ONNX, and MLX variants and can download missing public artifacts:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements-benchmarks.txt
+./.venv/bin/python Scripts/run_cross_runtime_benchmark.py
+```
+
+See [Scripts/README.md](Scripts/README.md) for benchmark options. The checked-in reference report is [Docs/BenchmarkReports/ft_places2-cross-runtime-steps20/summary.md](Docs/BenchmarkReports/ft_places2-cross-runtime-steps20/summary.md).
+
 ## Demo App
 
 The demo app is in `Demo/MoebiusDemo`.
