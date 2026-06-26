@@ -29,6 +29,8 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACT_DIR = ROOT / "BenchmarkArtifacts" / "cross-runtime"
 DEFAULT_OUTPUT_DIR = ROOT / "Docs" / "BenchmarkReports" / "ft_places2-cross-runtime-steps20"
+DEFAULT_IMAGE = ROOT / "TestFixtures" / "places" / "places_desert_canyon.png"
+DEFAULT_MASK = ROOT / "TestFixtures" / "places" / "places_desert_canyon_mask.png"
 MLX_VARIANTS = (
     "ft_places2-f32",
     "ft_places2-f16",
@@ -716,6 +718,7 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
             "- `--pytorch-code-root`: original Moebius Python repository.",
             "- `--pytorch-weights-root`: Hugging Face `hustvl/Moebius` checkpoint root.",
             "- `--vae-dir`: PixelHacker VAE directory containing `config.json` and `diffusion_pytorch_model.bin`.",
+            "- `--image` and `--mask`: optional benchmark fixture override. Defaults use `TestFixtures/places/` for the `ft_places2` report.",
             "- `--torch-devices`: comma-separated PyTorch devices, for example `cpu,mps`.",
             "- `--onnx-providers`: comma-separated ONNX Runtime providers, for example `CPUExecutionProvider,CoreMLExecutionProvider`.",
             "- `--chart-max-total-seconds`: omit very slow rows from chart images while keeping them in CSV/table output.",
@@ -772,8 +775,8 @@ def parse_args() -> argparse.Namespace:
     args.mlx_model_root = args.mlx_model_root or (Path(os.environ["MOEBIUS_MLX_MODEL_DIR"]) if os.environ.get("MOEBIUS_MLX_MODEL_DIR") else None)
     args.mlx_download_base = args.mlx_download_base or args.artifact_dir / "models" / "Moebius-MLX-Hub"
     code_root = args.pytorch_code_root
-    args.image = args.image or code_root / "data" / "images" / "0.png"
-    args.mask = args.mask or code_root / "data" / "masks" / "000000.png"
+    args.image = args.image or DEFAULT_IMAGE
+    args.mask = args.mask or DEFAULT_MASK
     return args
 
 

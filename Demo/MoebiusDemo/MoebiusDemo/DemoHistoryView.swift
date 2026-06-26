@@ -3,15 +3,15 @@ import UIKit
 // MARK: - DemoHistoryView
 
 final class DemoHistoryView: UIView {
-	private enum Layout {
-		static let cornerRadius: CGFloat = 8
-		static let contentInset: CGFloat = 10
-	}
+
+	// MARK: Properties
 
 	private static let rowCount: Int = 6
 	private var rows: [DemoHistoryRowView] = (0 ..< DemoHistoryView.rowCount).map { _ in
 		return DemoHistoryRowView()
 	}
+
+	// MARK: Initialization
 
 	override init(frame: CGRect) {
 		super.init(frame: frame)
@@ -27,12 +27,21 @@ final class DemoHistoryView: UIView {
 		fatalError("init(coder:) has not been implemented")
 	}
 
+	// MARK: Configuration
+
 	func configure(records: [DemoRunRecord]) {
 		for index in self.rows.indices {
 			let record: DemoRunRecord? = index < records.count ? records[index] : nil
 			self.rows[index].configure(record: record)
 		}
 		self.setNeedsLayout()
+	}
+
+	// MARK: - Layout
+
+	private enum Layout {
+		static let cornerRadius: CGFloat = 8
+		static let contentInset: CGFloat = 10
 	}
 
 	override func layoutSubviews() {
@@ -57,12 +66,8 @@ final class DemoHistoryView: UIView {
 // MARK: - DemoHistoryRowView
 
 private final class DemoHistoryRowView: UIView {
-	private enum Layout {
-		static let spacing: CGFloat = 8
-		static let maximumDetailWidth: CGFloat = 390
-		static let detailWidthRatio: CGFloat = 0.65
-		static let zero: CGFloat = 0
-	}
+
+	// MARK: Views
 
 	private let variantLabel: UILabel = {
 		let label: UILabel = .init()
@@ -83,6 +88,8 @@ private final class DemoHistoryRowView: UIView {
 		return label
 	}()
 
+	// MARK: Initialization
+
 	override init(frame: CGRect) {
 		super.init(frame: frame)
 		self.addSubview(self.variantLabel)
@@ -94,6 +101,8 @@ private final class DemoHistoryRowView: UIView {
 	required init?(coder: NSCoder) {
 		fatalError("init(coder:) has not been implemented")
 	}
+
+	// MARK: Configuration
 
 	func configure(record: DemoRunRecord?) {
 		guard let record else {
@@ -109,6 +118,15 @@ private final class DemoHistoryRowView: UIView {
 		let sizeText: String = record.modelMB.map { String(format: "  %.0f MB", $0) } ?? ""
 		let memoryText: String = record.memoryMB.map { String(format: "  %.0f MB RSS", $0) } ?? ""
 		self.detailLabel.text = "\(record.status)  \(record.steps) steps  \(String(format: "%.1fs", record.duration))\(meanText)\(sizeText)\(memoryText)"
+	}
+
+	// MARK: - Layout
+
+	private enum Layout {
+		static let spacing: CGFloat = 8
+		static let maximumDetailWidth: CGFloat = 390
+		static let detailWidthRatio: CGFloat = 0.65
+		static let zero: CGFloat = 0
 	}
 
 	override func layoutSubviews() {
@@ -136,6 +154,8 @@ private final class DemoHistoryRowView: UIView {
 
 #if DEBUG
 import SwiftUI
+
+// MARK: - Preview
 
 #Preview("Moebius Run History") {
 	DemoHistoryPreview()

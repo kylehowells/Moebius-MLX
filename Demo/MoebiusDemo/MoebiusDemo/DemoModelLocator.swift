@@ -32,6 +32,9 @@ enum DemoModelAvailability {
 // MARK: - DemoModelLocator
 
 enum DemoModelLocator {
+	
+	// MARK: Constants
+	
 	private static let fallbackDownloadSizes: [String: Int64] = [
 		"ft_celebahq-f16": 619_886_737,
 		"ft_celebahq-f32": 1_239_583_681,
@@ -61,6 +64,8 @@ enum DemoModelLocator {
 		"pretrained-q8": 600_225_244,
 	]
 
+	// MARK: Availability
+	
 	static func availability(variant: String) -> DemoModelAvailability {
 		if let resolved = self.resolveLocalOrCachedWithSource(variant: variant) {
 			return .available(source: resolved.source, sizeBytes: self.deploymentBytes(directory: resolved.directory))
@@ -68,6 +73,8 @@ enum DemoModelLocator {
 		return .missing(estimatedBytes: self.fallbackDownloadSizes[variant])
 	}
 
+	// MARK: Resolution
+	
 	static func resolveForRun(variant: String) throws -> URL {
 		if let resolved = self.resolveLocalOrCachedWithSource(variant: variant) {
 			return resolved.directory
@@ -84,6 +91,8 @@ enum DemoModelLocator {
 		return self.resolveLocalOrCachedWithSource(variant: variant)?.directory
 	}
 
+	// MARK: Download Size
+	
 	static func downloadSizeBytes(for variants: [String]) async -> Int64 {
 		var total: Int64 = 0
 		for variant in variants {
@@ -92,6 +101,8 @@ enum DemoModelLocator {
 		return total
 	}
 
+	// MARK: Formatting
+	
 	static func formatBytes(_ bytes: Int64) -> String {
 		if bytes <= 0 {
 			return "unknown size"
@@ -103,6 +114,8 @@ enum DemoModelLocator {
 		return "\(String(format: "%.1f", mb)) MB"
 	}
 
+	// MARK: Local Search
+	
 	private static func resolveLocalOrCachedWithSource(variant: String) -> (directory: URL, source: DemoModelSource)? {
 		let fileManager: FileManager = .default
 		for developerRoot in self.developerModelRoots() {
@@ -151,6 +164,8 @@ enum DemoModelLocator {
 		return roots
 	}
 
+	// MARK: Hugging Face Cache
+	
 	private static func resolveMaterializedHubCache(variant: String) -> URL? {
 		guard let repoID: String = MoebiusModelResolver.defaultHubRepoID(for: variant) else {
 			return nil
@@ -204,6 +219,8 @@ enum DemoModelLocator {
 		return variant == modelName
 	}
 
+	// MARK: Model Metadata
+	
 	private static func deploymentBytes(directory: URL) -> Int64? {
 		guard let info: MoebiusModelDeploymentInfo = try? MoebiusModelDeploymentInfo.load(from: directory) else {
 			return nil
@@ -212,6 +229,8 @@ enum DemoModelLocator {
 		return Int64(info.totalBytes)
 	}
 
+	// MARK: Hub Metadata
+	
 	private static func remoteDownloadSizeBytes(variant: String) async -> Int64? {
 		guard let repoID: String = MoebiusModelResolver.defaultHubRepoID(for: variant) else {
 			return nil

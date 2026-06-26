@@ -62,6 +62,7 @@ Useful options:
 
 - `run_cross_runtime_benchmark.py`: Portable PyTorch/ONNX/MLX benchmark with Hugging Face/GitHub artifact fallback, CSV output, charts, contact sheet, and report generation. This is the benchmark to use for public comparisons.
 - `generate_reference_fixture.py`: Creates deterministic image, mask, and latent fixture tensors used by benchmark scripts.
+- Default benchmark image/mask assets live in `TestFixtures/places/`; pass `--image` and `--mask` to use another fixture.
 
 ### Focused MLX Benchmark Helpers
 

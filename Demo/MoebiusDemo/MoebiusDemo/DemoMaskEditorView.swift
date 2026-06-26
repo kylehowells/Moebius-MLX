@@ -10,11 +10,11 @@ protocol DemoMaskEditorViewDelegate: AnyObject {
 // MARK: - DemoMaskEditorView
 
 final class DemoMaskEditorView: UIView {
-	private enum Layout {
-		static let cornerRadius: CGFloat = 8
-	}
+
+	// MARK: Properties
 
 	weak var delegate: DemoMaskEditorViewDelegate? = nil
+
 	var brushSize: CGFloat = 32 {
 		didSet {
 			self.brushSize = max(1, self.brushSize)
@@ -31,6 +31,8 @@ final class DemoMaskEditorView: UIView {
 	private var lastModelPoint: CGPoint? = nil
 	private var lastViewPoint: CGPoint? = nil
 
+	// MARK: Initialization
+
 	override init(frame: CGRect) {
 		super.init(frame: frame)
 		self.backgroundColor = UIColor.secondarySystemBackground
@@ -46,6 +48,8 @@ final class DemoMaskEditorView: UIView {
 		fatalError("init(coder:) has not been implemented")
 	}
 
+	// MARK: Configuration
+
 	func configure(image: UIImage, mask: [Float]) {
 		self.image = image
 		self.setMask(mask)
@@ -57,10 +61,18 @@ final class DemoMaskEditorView: UIView {
 		self.setNeedsDisplay()
 	}
 
+	// MARK: - Layout
+
+	private enum Layout {
+		static let cornerRadius: CGFloat = 8
+	}
+
 	override func layoutSubviews() {
 		super.layoutSubviews()
 		self.layer.cornerRadius = Layout.cornerRadius
 	}
+
+	// MARK: Drawing
 
 	override func draw(_ rect: CGRect) {
 		super.draw(rect)
@@ -79,6 +91,8 @@ final class DemoMaskEditorView: UIView {
 			activeStrokePath.stroke()
 		}
 	}
+
+	// MARK: Touch Handling
 
 	override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
 		guard let touch: UITouch = touches.first else { return }
@@ -103,6 +117,8 @@ final class DemoMaskEditorView: UIView {
 	override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
 		self.finishStroke(notify: true)
 	}
+
+	// MARK: Stroke Handling
 
 	private func beginStroke(at viewPoint: CGPoint) {
 		guard let modelPoint: CGPoint = self.modelPoint(for: viewPoint) else { return }
@@ -168,6 +184,8 @@ final class DemoMaskEditorView: UIView {
 		self.delegate?.maskEditorView(self, didChangeMask: self.maskValues)
 	}
 
+	// MARK: Mask Painting
+
 	private func paintLine(from start: CGPoint, to end: CGPoint) {
 		let distance: CGFloat = hypot(end.x - start.x, end.y - start.y)
 		let step: CGFloat = max(1, self.brushSize / 3)
@@ -201,6 +219,8 @@ final class DemoMaskEditorView: UIView {
 			}
 		}
 	}
+
+	// MARK: Geometry
 
 	private func viewBrushDiameter() -> CGFloat {
 		guard let image else {
@@ -258,6 +278,8 @@ final class DemoMaskEditorView: UIView {
 		)
 	}
 
+	// MARK: Mask Rendering
+
 	private func rebuildMaskImage() {
 		let size: Int = MoebiusImageTensors.imageSize
 		var rgba: [UInt8] = Array(repeating: 0, count: size * size * 4)
@@ -275,6 +297,8 @@ final class DemoMaskEditorView: UIView {
 
 #if DEBUG
 import SwiftUI
+
+// MARK: - Preview
 
 #Preview("Moebius Mask Editor") {
 	DemoMaskEditorPreview()

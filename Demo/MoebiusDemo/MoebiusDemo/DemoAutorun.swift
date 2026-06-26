@@ -1,7 +1,12 @@
 import Darwin
 import Foundation
 
+// MARK: - DemoAutorun
+
 enum DemoAutorun {
+	
+	// MARK: Status Output
+	
 	static func write(status: String) {
 		let outputStatus: String
 		if let runID: String = ProcessInfo.processInfo.environment["MOEBIUS_DEMO_AUTORUN_RUN_ID"], runID.isEmpty == false {
@@ -28,6 +33,8 @@ enum DemoAutorun {
 		try? outputStatus.write(to: statusURL, atomically: true, encoding: .utf8)
 	}
 
+	// MARK: Formatting
+	
 	static func formatMB(_ value: Double?) -> String {
 		guard let value else {
 			return "unknown"
@@ -61,6 +68,8 @@ enum DemoAutorun {
 		.joined(separator: ",")
 	}
 
+	// MARK: Memory
+	
 	static func residentMemoryMB() -> Double? {
 		var info: mach_task_basic_info = .init()
 		var count: mach_msg_type_number_t = .init(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)

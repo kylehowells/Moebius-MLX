@@ -30,11 +30,14 @@ import numpy as np
 from PIL import Image
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 ROOT = Path(os.environ.get("MOEBIUS_SOURCE_ROOT", Path.cwd()))
 CODE_ROOT = ROOT / "Moebius-Code"
 ONNX_ROOT = ROOT / "Moebius-ONNX"
 WEIGHTS_ROOT = ROOT / "Moebius-Models"
 VAE_DIR = ROOT / "PixelHacker" / "vae"
+DEFAULT_IMAGE = REPO_ROOT / "TestFixtures" / "places" / "places_desert_canyon.png"
+DEFAULT_MASK = REPO_ROOT / "TestFixtures" / "places" / "places_desert_canyon_mask.png"
 SCALING_FACTOR = 0.13025
 NOISE_OFFSET = 0.0357
 BETA_START = 0.00085
@@ -228,8 +231,8 @@ def parse_args():
     parser.add_argument("--guidance", type=float, default=2.0)
     parser.add_argument("--strength", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--image", type=Path, default=CODE_ROOT / "data" / "images" / "0.png")
-    parser.add_argument("--mask", type=Path, default=CODE_ROOT / "data" / "masks" / "000000.png")
+    parser.add_argument("--image", type=Path, default=DEFAULT_IMAGE)
+    parser.add_argument("--mask", type=Path, default=DEFAULT_MASK)
     parser.add_argument("--output", type=Path, default=ROOT / "Moebius-MLX-fixtures" / "ft_places2-onnx")
     parser.add_argument("--code-root", type=Path, default=CODE_ROOT)
     parser.add_argument("--onnx-root", type=Path, default=ONNX_ROOT)

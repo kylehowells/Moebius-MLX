@@ -229,7 +229,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 			else {
 				options = self.standardPrecisionOptions
 			}
-			let actions: [UIAction] = options.enumerated().map { precisionIndex, option in
+			let actions: [UIAction] = options.enumerated().map({ precisionIndex, option in
 				let variant: String = option.resolvedVariant(modelName: modelName)
 				let state: UIMenuElement.State = (modelIndex == self.selectedModelIndex && precisionIndex == self.selectedPrecisionIndex) ? .on : .off
 				return UIAction(title: variant, state: state, handler: { [weak self] _ in
@@ -240,7 +240,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 					self.reloadModelMenu()
 					self.updateSelectedModelAvailabilityStatus(prefix: "Selected")
 				})
-			}
+			})
 			modelMenus.append(UIMenu(title: modelName, options: .displayInline, children: actions))
 		}
 
@@ -299,19 +299,20 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		}
 
 		self.updateStatus("Checking download size for \(missingVariants.count) missing model\(missingVariants.count == 1 ? "" : "s")")
-		Task { [weak self] in
+		
+		Task.init(operation: { [weak self] in
 			guard let self else { return }
 
 			let downloadSizeBytes: Int64 = await DemoModelLocator.downloadSizeBytes(for: missingVariants)
-			await MainActor.run {
+			await MainActor.run(body: {
 				self.presentDownloadPrompt(
 					missingVariants: missingVariants,
 					totalBytes: downloadSizeBytes,
 					afterDownloadVariants: variants,
 					resultMode: resultMode
 				)
-			}
-		}
+			})
+		})
 	}
 
 	private func presentDownloadPrompt(
@@ -337,6 +338,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self.isRunning = true
 		self.setRunControlsEnabled(false)
 		self.updateStatus("Preparing download")
+		
 		Task { [weak self] in
 			guard let self else { return }
 
@@ -358,16 +360,16 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 						}
 					)
 				}
-				await MainActor.run {
+				await MainActor.run(body: {
 					self.isRunning = false
 					self.setRunControlsEnabled(true)
 					self.runVariants(allVariants, resultMode: resultMode)
-				}
+				})
 			}
 			catch {
-				await MainActor.run {
+				await MainActor.run(body: {
 					self.finishRun(status: "Download failed: \(error.localizedDescription)")
-				}
+				})
 			}
 		}
 	}
@@ -385,6 +387,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		let seed: UInt64 = self.seed
 		let pasteBack: Bool = self.pasteBack
 		let sample: DemoFixture.Sample = self.currentSample
+		
 		guard MoebiusRuntime.supportsModelExecution else {
 			for variant in variants.reversed() {
 				self.addRunRecord(DemoRunRecord(
@@ -402,31 +405,33 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 			return
 		}
 
-		DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+		DispatchQueue.global(qos: .userInitiated).async(execute: { [weak self] in
 			var completedRecords: [DemoRunRecord] = []
 			var currentVariant: String = firstVariant
 			var failedRecords: [DemoRunRecord] = []
 			var latestImage: UIImage?
+			
 			for (index, variant) in variants.enumerated() {
 				currentVariant = variant
 				let startDate: Date = .init()
 				var modelMB: Double?
 				do {
 					DemoAutorun.write(status: "resolving \(variant)")
-					DispatchQueue.main.async {
+					DispatchQueue.main.async(execute: {
 						self?.updateStatus(isComparisonRun ? "\(variant): \(index + 1)/\(variants.count)" : "\(variant): loading")
-					}
+					})
 					let directory: URL = try DemoModelLocator.resolveForRun(variant: variant)
 					let deploymentInfo: MoebiusModelDeploymentInfo = try MoebiusModelDeploymentInfo.load(from: directory)
 					modelMB = deploymentInfo.totalMB
 					DemoAutorun.write(status: "resolved \(variant) \(directory.path)")
 					let model: MoebiusModel = try MoebiusModel.load(from: directory, progress: { stage in
 						DemoAutorun.write(status: "loading \(variant): \(stage)")
-						DispatchQueue.main.async {
+						DispatchQueue.main.async(execute: {
 							self?.updateStatus("\(variant): \(stage)")
-						}
+						})
 					})
 					DemoAutorun.write(status: "loaded \(variant)")
+					
 					let pipeline: MoebiusPipeline = .init(model: model)
 					let input: MoebiusImageInput = .init(imageNHWC: sample.image, maskNHWC: sample.mask)
 					let options: MoebiusGenerationOptions = .init(steps: stepCount, guidanceScale: guidanceScale, seed: seed, strength: 0.99, pasteBack: pasteBack)
@@ -454,9 +459,9 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 						memoryMB: memoryMB
 					)
 					completedRecords.append(record)
-					DispatchQueue.main.async {
+					DispatchQueue.main.async(execute: {
 						self?.addRunRecord(record)
-					}
+					})
 					DemoAutorun.write(status: "done \(variant) steps=\(stepCount) seconds=\(DemoAutorun.formatSeconds(duration)) model_mb=\(DemoAutorun.formatMB(modelMB)) memory_mb=\(DemoAutorun.formatMB(memoryMB)) min=\(stats.min) max=\(stats.max) mean=\(stats.mean)")
 				}
 				catch {
@@ -472,19 +477,22 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 						memoryMB: memoryMB
 					)
 					failedRecords.append(record)
-					DispatchQueue.main.async {
+					DispatchQueue.main.async(execute: {
 						self?.addRunRecord(record)
-					}
+					})
+					
 					DemoAutorun.write(status: "error \(variant) \(error.localizedDescription)")
+					
 					if isComparisonRun == false {
-						DispatchQueue.main.async {
+						DispatchQueue.main.async(execute: {
 							self?.finishRun(status: "\(currentVariant): \(error.localizedDescription)")
-						}
+						})
+						
 						return
 					}
 				}
 			}
-			DispatchQueue.main.async {
+			DispatchQueue.main.async(execute: {
 				if let latestImage {
 					self?._view.resultImageView.image = latestImage
 				}
@@ -498,8 +506,8 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 				else {
 					self?.finishRun(status: "\(firstVariant): done")
 				}
-			}
-		}
+			})
+		})
 	}
 
 	// MARK: - UI State
@@ -657,39 +665,6 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 
 final class DemoView: UIView {
 
-	// MARK: - Layout
-
-	private enum Layout {
-		static let contentInset: CGFloat = 18
-		static let spacing: CGFloat = 12
-		static let smallSpacing: CGFloat = 8
-		static let imageCornerRadius: CGFloat = 8
-		static let wideLayoutMinimumWidth: CGFloat = 900
-		static let sideBySideMinimumContentWidth: CGFloat = 620
-		static let compactToolbarMaximumContentWidth: CGFloat = 520
-		static let wideInspectorWidth: CGFloat = 300
-		static let compactInspectorMaximumWidth: CGFloat = 340
-		static let compactInspectorMinimumWidth: CGFloat = 280
-		static let compactInspectorWidthRatio: CGFloat = 0.86
-		static let topButtonHeight: CGFloat = 38
-		static let optionsButtonWidth: CGFloat = 104
-		static let minimumPrimaryButtonWidth: CGFloat = 124
-		static let maximumPrimaryButtonWidth: CGFloat = 170
-		static let primaryButtonWidthRatio: CGFloat = 0.22
-		static let titleLabelMaximumWidth: CGFloat = 220
-		static let titleLabelMinimumWidth: CGFloat = 80
-		static let titleLabelHeight: CGFloat = 34
-		static let statusLabelHeight: CGFloat = 34
-		static let sectionTitleHeight: CGFloat = 24
-		static let tallHistoryHeight: CGFloat = 118
-		static let compactHistoryHeight: CGFloat = 88
-		static let minimumHistoryHeight: CGFloat = 72
-		static let tallHistoryMinimumHeight: CGFloat = 760
-		static let minimumImageAreaHeight: CGFloat = 240
-		static let imageAreaReservedHeight: CGFloat = 34
-		static let hiddenInspectorOffset: CGFloat = 0
-	}
-
 	// MARK: - State
 
 	var isInspectorOpen: Bool = false {
@@ -772,7 +747,7 @@ final class DemoView: UIView {
 	var paintModeControl: UISegmentedControl { return self.inspectorPanel.paintModeControl }
 	var pasteBackSwitch: UISwitch { return self.inspectorPanel.pasteBackSwitch }
 
-	// MARK: - Init
+	// MARK: - Initialization
 
 	override init(frame: CGRect) {
 		super.init(frame: frame)
@@ -834,6 +809,37 @@ final class DemoView: UIView {
 	}
 
 	// MARK: - Layout
+
+	private enum Layout {
+		static let contentInset: CGFloat = 18
+		static let spacing: CGFloat = 12
+		static let smallSpacing: CGFloat = 8
+		static let imageCornerRadius: CGFloat = 8
+		static let wideLayoutMinimumWidth: CGFloat = 900
+		static let sideBySideMinimumContentWidth: CGFloat = 620
+		static let compactToolbarMaximumContentWidth: CGFloat = 520
+		static let wideInspectorWidth: CGFloat = 300
+		static let compactInspectorMaximumWidth: CGFloat = 340
+		static let compactInspectorMinimumWidth: CGFloat = 280
+		static let compactInspectorWidthRatio: CGFloat = 0.86
+		static let topButtonHeight: CGFloat = 38
+		static let optionsButtonWidth: CGFloat = 104
+		static let minimumPrimaryButtonWidth: CGFloat = 124
+		static let maximumPrimaryButtonWidth: CGFloat = 170
+		static let primaryButtonWidthRatio: CGFloat = 0.22
+		static let titleLabelMaximumWidth: CGFloat = 220
+		static let titleLabelMinimumWidth: CGFloat = 80
+		static let titleLabelHeight: CGFloat = 34
+		static let statusLabelHeight: CGFloat = 34
+		static let sectionTitleHeight: CGFloat = 24
+		static let tallHistoryHeight: CGFloat = 118
+		static let compactHistoryHeight: CGFloat = 88
+		static let minimumHistoryHeight: CGFloat = 72
+		static let tallHistoryMinimumHeight: CGFloat = 760
+		static let minimumImageAreaHeight: CGFloat = 240
+		static let imageAreaReservedHeight: CGFloat = 34
+		static let hiddenInspectorOffset: CGFloat = 0
+	}
 
 	override func layoutSubviews() {
 		super.layoutSubviews()
@@ -1110,6 +1116,7 @@ import SwiftUI
 }
 
 private struct DemoViewControllerPreview: UIViewControllerRepresentable {
+	
 	func makeUIViewController(context: Context) -> ViewController {
 		return ViewController()
 	}
@@ -1118,5 +1125,6 @@ private struct DemoViewControllerPreview: UIViewControllerRepresentable {
 		viewController.view.setNeedsLayout()
 		viewController.view.layoutIfNeeded()
 	}
+	
 }
 #endif

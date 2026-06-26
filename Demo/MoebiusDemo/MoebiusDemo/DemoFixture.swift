@@ -1,7 +1,12 @@
 import MoebiusMLX
 import UIKit
 
+// MARK: - DemoFixture
+
 enum DemoFixture {
+	
+	// MARK: Types
+	
 	struct Sample {
 		let image: [Float]
 		let mask: [Float]
@@ -13,6 +18,8 @@ enum DemoFixture {
 		let mean: Float
 	}
 
+	// MARK: Sample Data
+	
 	static func makeSample() -> Sample {
 		let size: Int = MoebiusImageTensors.imageSize
 		var image: [Float] = Array(repeating: 0, count: size * size * 3)
@@ -50,10 +57,14 @@ enum DemoFixture {
 		return Sample(image: imageValues, mask: self.makeEmptyMask())
 	}
 
+	// MARK: Mask Construction
+	
 	static func makeEmptyMask() -> [Float] {
 		return Array(repeating: 0, count: MoebiusImageTensors.imageSize * MoebiusImageTensors.imageSize)
 	}
 
+	// MARK: Image Construction
+	
 	static func makeImage(rgb: [Float]) -> UIImage {
 		var rgb01: [Float] = Array(repeating: 0, count: rgb.count)
 		for index in rgb.indices {
@@ -105,6 +116,8 @@ enum DemoFixture {
 		return UIImage(cgImage: image)
 	}
 
+	// MARK: Statistics
+	
 	static func stats(values: [Float]) -> Stats {
 		var minValue: Float = .greatestFiniteMagnitude
 		var maxValue: Float = -.greatestFiniteMagnitude
@@ -117,6 +130,8 @@ enum DemoFixture {
 		return Stats(min: minValue, max: maxValue, mean: Float(total / Double(values.count)))
 	}
 
+	// MARK: Private Helpers
+	
 	private static func makeCircularMask() -> [Float] {
 		let size: Int = MoebiusImageTensors.imageSize
 		var mask: [Float] = Array(repeating: 0, count: size * size)

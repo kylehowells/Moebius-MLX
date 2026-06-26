@@ -4,6 +4,16 @@ import UIKit
 
 final class DemoInspectorPanelView: UIView {
 	
+	// MARK: Properties
+	
+	var contentSafeAreaInsets: UIEdgeInsets = .zero {
+		didSet {
+			self.setNeedsLayout()
+		}
+	}
+	
+	// MARK: Views
+	
 	let scrollView: UIScrollView = {
 		let scrollView: UIScrollView = .init()
 		scrollView.alwaysBounceVertical = true
@@ -92,6 +102,8 @@ final class DemoInspectorPanelView: UIView {
 	let clearMaskButton: UIButton = DemoInspectorPanelView.makeButton(title: "Clear mask", imageName: "eraser", filled: false, identifier: "clear-mask")
 	let compareButton: UIButton = DemoInspectorPanelView.makeButton(title: "Compare quants", imageName: "square.grid.2x2", filled: false, identifier: "compare-quants")
 
+	// MARK: Initialization
+	
 	override init(frame: CGRect) {
 		super.init(frame: frame)
 		
@@ -134,6 +146,8 @@ final class DemoInspectorPanelView: UIView {
 		fatalError("init(coder:) has not been implemented")
 	}
 
+	// MARK: Configuration
+	
 	func configurePreviewState() {
 		self.modelButton.setTitle("ft_places2-f16", for: .normal)
 		self.stepsLabel.text = "Denoising steps: 8"
@@ -162,12 +176,6 @@ final class DemoInspectorPanelView: UIView {
 		static let sliderHeight: CGFloat = 32
 		static let segmentedControlHeight: CGFloat = 34
 		static let minimumButtonAreaHeight: CGFloat = 136
-	}
-	
-	var contentSafeAreaInsets: UIEdgeInsets = .zero {
-		didSet {
-			self.setNeedsLayout()
-		}
 	}
 
 	override func layoutSubviews() {
@@ -370,6 +378,8 @@ final class DemoInspectorPanelView: UIView {
 		return max(label.frame.maxY, switchView.frame.maxY) + Layout.sectionSpacing
 	}
 
+	// MARK: Factories
+	
 	private static func makeButton(title: String, imageName: String, filled: Bool, identifier: String) -> UIButton {
 		var configuration: UIButton.Configuration = filled ? UIButton.Configuration.filled() : UIButton.Configuration.tinted()
 		configuration.title = title
@@ -411,6 +421,8 @@ final class DemoInspectorPanelView: UIView {
 
 #if DEBUG
 import SwiftUI
+
+// MARK: - Preview
 
 #Preview("Moebius Inspector Panel") {
 	DemoInspectorPanelPreview()

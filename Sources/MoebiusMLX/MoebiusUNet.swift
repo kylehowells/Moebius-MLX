@@ -100,6 +100,9 @@ final class MoebiusSelfLambda: Module {
 	let heads: Int
 	let dimK: Int
 	let dimV: Int
+	private let groupedPositionLock: NSLock = .init()
+	private var groupedPositionWeightCache: MLXArray? = nil
+	private var groupedPositionBiasCache: MLXArray? = nil
 	@ModuleInfo(key: "to_q") var query: any Module & MoebiusUnaryLayer
 	@ModuleInfo(key: "to_k") var key: any Module & MoebiusUnaryLayer
 	@ModuleInfo(key: "to_v") var value: any Module & MoebiusUnaryLayer
@@ -121,6 +124,27 @@ final class MoebiusSelfLambda: Module {
 		self.freeze()
 	}
 
+	private func groupedPositionParameters() -> (weight: MLXArray, bias: MLXArray?) {
+		self.groupedPositionLock.lock()
+		defer { self.groupedPositionLock.unlock() }
+
+		if let groupedPositionWeightCache {
+			return (groupedPositionWeightCache, self.groupedPositionBiasCache)
+		}
+
+		let weight: MLXArray = tiled(self.positional.weight, repetitions: [self.dimV, 1, 1, 1])
+		let bias: MLXArray? = self.positional.bias.map { tiled($0, repetitions: [self.dimV]) }
+		if let bias {
+			eval(weight, bias)
+		}
+		else {
+			eval(weight)
+		}
+		self.groupedPositionWeightCache = weight
+		self.groupedPositionBiasCache = bias
+		return (weight, bias)
+	}
+
 	func callAsFunction(_ x: MLXArray) -> MLXArray {
 		let (b, h, w, _) = x.shape4
 		let n: Int = h * w
@@ -131,11 +155,32 @@ final class MoebiusSelfLambda: Module {
 		let lambdaContent: MLXArray = matmul(kSoftmax, v.transposed(0, 1, 3, 2)).squeezed(axis: 1)
 		let content: MLXArray = matmul(q.transposed(0, 1, 3, 2), lambdaContent.expandedDimensions(axis: 1)).transposed(0, 1, 3, 2)
 		v = v.reshaped(b, 1, self.dimV, h, w)
-		let posInput: MLXArray = v.reshaped(b * self.dimV, 1, h, w).transposed(0, 2, 3, 1)
-		let lambdaPosition: MLXArray = self.positional(posInput).transposed(0, 3, 1, 2).reshaped(b, self.dimV, self.dimK, h, w).transposed(0, 2, 1, 3, 4).reshaped(b, self.dimK, self.dimV, n)
+		let groupedInput: MLXArray = v.squeezed(axis: 1).transposed(0, 2, 3, 1)
+		let positionParameters = self.groupedPositionParameters()
+		let groupedPosition: MLXArray = conv2d(
+			groupedInput,
+			positionParameters.weight,
+			stride: .init(self.positional.stride),
+			padding: .init(self.positional.padding),
+			dilation: .init(self.positional.dilation),
+			groups: self.dimV
+		)
+		let biasedGroupedPosition: MLXArray = positionParameters.bias.map { groupedPosition + $0 } ?? groupedPosition
+		let lambdaPosition: MLXArray = biasedGroupedPosition.reshaped(b, h, w, self.dimV, self.dimK).transposed(0, 4, 3, 1, 2).reshaped(b, self.dimK, self.dimV, n)
 		let position: MLXArray = (q.expandedDimensions(axis: 3) * lambdaPosition.expandedDimensions(axis: 1)).sum(axis: 2)
 		let y: MLXArray = content + position
 		return y.transposed(0, 3, 1, 2).reshaped(b, h, w, self.heads * self.dimV)
+	}
+}
+
+// MARK: - MoebiusCrossLambdaCache
+
+struct MoebiusCrossLambdaCache {
+	let lambdaContent: MLXArray
+	let lambdaPosition: MLXArray
+
+	var arrays: [MLXArray] {
+		[self.lambdaContent, self.lambdaPosition]
 	}
 }
 
@@ -166,7 +211,22 @@ final class MoebiusCrossLambda: Module {
 		self.freeze()
 	}
 
-	func callAsFunction(_ x: MLXArray, hiddenStates: MLXArray) -> MLXArray {
+	func prepare(hiddenStates: MLXArray, positions: Int) -> MoebiusCrossLambdaCache {
+		let b: Int = hiddenStates.dim(0)
+		let k: MLXArray = self.key(hiddenStates).transposed(0, 2, 1).reshaped(b, 1, self.dimK, -1)
+		let vProjected: MLXArray = self.value(hiddenStates)
+		let v: MLXArray = self.valueNorm(vProjected).transposed(0, 2, 1).reshaped(b, 1, self.dimV, -1)
+		let kSoftmax: MLXArray = softmax(k, axis: -1)
+		let lambdaContent: MLXArray = matmul(kSoftmax, v.transposed(0, 1, 3, 2)).squeezed(axis: 1)
+		let rel: MLXArray = self.relativePositionEmbedding[0 ..< positions, 0..., 0..., 0...].squeezed(axis: 3)
+		let lambdaPosition: MLXArray = (
+			rel.expandedDimensions(axis: 0).expandedDimensions(axis: 4)
+				* v.squeezed(axis: 1).transposed(0, 2, 1).expandedDimensions(axis: 1).expandedDimensions(axis: 3)
+		).sum(axis: 2)
+		return MoebiusCrossLambdaCache(lambdaContent: lambdaContent, lambdaPosition: lambdaPosition)
+	}
+
+	func callAsFunction(_ x: MLXArray, hiddenStates: MLXArray, cache: MoebiusCrossLambdaCache? = nil) -> MLXArray {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
@@ -177,22 +237,11 @@ final class MoebiusCrossLambda: Module {
 		let (b, h, w, _) = x.shape4
 		let n: Int = h * w
 		let q: MLXArray = self.queryNorm(self.query(x)).reshaped(b, n, self.heads, self.dimK).transposed(0, 2, 3, 1)
-		let k: MLXArray = self.key(hiddenStates).transposed(0, 2, 1).reshaped(b, 1, self.dimK, -1)
-		let vProjected: MLXArray = self.value(hiddenStates)
-		let v: MLXArray = self.valueNorm(vProjected).transposed(0, 2, 1).reshaped(b, 1, self.dimV, -1)
-		let kSoftmax: MLXArray = softmax(k, axis: -1)
-		let lambdaContent: MLXArray = matmul(kSoftmax, v.transposed(0, 1, 3, 2)).squeezed(axis: 1)
-		let content: MLXArray = matmul(q.transposed(0, 1, 3, 2), lambdaContent.expandedDimensions(axis: 1)).transposed(0, 1, 3, 2)
-		let relSlice: MLXArray = self.relativePositionEmbedding[0 ..< n, 0..., 0..., 0...]
-		traceEval("relSlice", relSlice)
-		let rel: MLXArray = relSlice.squeezed(axis: 3)
-		let lambdaPosition: MLXArray = (
-			rel.expandedDimensions(axis: 0).expandedDimensions(axis: 4)
-				* v.squeezed(axis: 1).transposed(0, 2, 1).expandedDimensions(axis: 1).expandedDimensions(axis: 3)
-		).sum(axis: 2)
+		let cache: MoebiusCrossLambdaCache = cache ?? self.prepare(hiddenStates: hiddenStates, positions: n)
+		let content: MLXArray = matmul(q.transposed(0, 1, 3, 2), cache.lambdaContent.expandedDimensions(axis: 1)).transposed(0, 1, 3, 2)
 		let position: MLXArray = (
 			q.expandedDimensions(axis: 4)
-				* lambdaPosition.transposed(0, 2, 1, 3).expandedDimensions(axis: 1)
+				* cache.lambdaPosition.transposed(0, 2, 1, 3).expandedDimensions(axis: 1)
 		)
 		.sum(axis: 2)
 		.transposed(0, 1, 3, 2)
@@ -268,7 +317,7 @@ final class MoebiusTransformerBlock: Module {
 		self._feedForward.wrappedValue = MoebiusMixFFN(dimensions: dimensions, hiddenDimensions: Int(Float(dimensions) * 2.5))
 	}
 
-	func callAsFunction(_ x: MLXArray, hiddenStates: MLXArray, height: Int, width: Int) -> MLXArray {
+	func callAsFunction(_ x: MLXArray, hiddenStates: MLXArray, height: Int, width: Int, crossCache: MoebiusCrossLambdaCache? = nil) -> MLXArray {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
@@ -286,7 +335,7 @@ final class MoebiusTransformerBlock: Module {
 		y = y + selfOut
 		let norm2 = self.norm2(y).reshaped(b, height, width, c)
 		traceEval("norm2", norm2)
-		let crossOut = self.crossAttention(norm2, hiddenStates: hiddenStates).reshaped(b, height * width, c)
+		let crossOut = self.crossAttention(norm2, hiddenStates: hiddenStates, cache: crossCache).reshaped(b, height * width, c)
 		traceEval("crossAttention", crossOut)
 		y = y + crossOut
 		let ffOut = self.feedForward(self.norm3(y))
@@ -311,7 +360,11 @@ final class MoebiusTransformer2D: Module {
 		self._projectionOut.wrappedValue = Conv2d(inputChannels: channels, outputChannels: channels, kernelSize: 1)
 	}
 
-	func callAsFunction(_ x: MLXArray, hiddenStates: MLXArray) -> MLXArray {
+	func prepareCrossCaches(hiddenStates: MLXArray, positions: Int) -> [MoebiusCrossLambdaCache] {
+		self.blocks.map { $0.crossAttention.prepare(hiddenStates: hiddenStates, positions: positions) }
+	}
+
+	func callAsFunction(_ x: MLXArray, hiddenStates: MLXArray, crossCaches: [MoebiusCrossLambdaCache]? = nil) -> MLXArray {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
@@ -323,8 +376,14 @@ final class MoebiusTransformer2D: Module {
 		let residual: MLXArray = x
 		var y: MLXArray = self.projectionIn(self.norm(x)).reshaped(b, h * w, c)
 		traceEval("projIn", y)
-		for block in self.blocks {
-			y = block(y, hiddenStates: hiddenStates, height: h, width: w)
+		for (index, block) in self.blocks.enumerated() {
+			y = block(
+				y,
+				hiddenStates: hiddenStates,
+				height: h,
+				width: w,
+				crossCache: crossCaches?[index]
+			)
 		}
 		y = self.projectionOut(y.reshaped(b, h, w, c))
 		traceEval("projOut", y)
@@ -368,7 +427,7 @@ final class MoebiusDownBlock: Module {
 		}
 	}
 
-	func callAsFunction(_ x: MLXArray, timeEmbedding: MLXArray, hiddenStates: MLXArray) -> (MLXArray, [MLXArray]) {
+	func callAsFunction(_ x: MLXArray, timeEmbedding: MLXArray, hiddenStates: MLXArray, crossCaches: [[MoebiusCrossLambdaCache]]? = nil) -> (MLXArray, [MLXArray]) {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
@@ -381,7 +440,7 @@ final class MoebiusDownBlock: Module {
 		for index in self.resnets.indices {
 			y = self.resnets[index](y, timeEmbedding: timeEmbedding)
 			traceEval("resnet.\(index)", y)
-			y = self.attentions[index](y, hiddenStates: hiddenStates)
+			y = self.attentions[index](y, hiddenStates: hiddenStates, crossCaches: crossCaches?[index])
 			traceEval("attention.\(index)", y)
 			outputs.append(y)
 		}
@@ -419,13 +478,13 @@ final class MoebiusUpBlock: Module {
 		}
 	}
 
-	func callAsFunction(_ x: MLXArray, residuals: inout [MLXArray], timeEmbedding: MLXArray, hiddenStates: MLXArray) -> MLXArray {
+	func callAsFunction(_ x: MLXArray, residuals: inout [MLXArray], timeEmbedding: MLXArray, hiddenStates: MLXArray, crossCaches: [[MoebiusCrossLambdaCache]]? = nil) -> MLXArray {
 		var y: MLXArray = x
 		for index in self.resnets.indices {
 			let skip: MLXArray = residuals.removeLast()
 			y = concatenated([y, skip], axis: -1)
 			y = self.resnets[index](y, timeEmbedding: timeEmbedding)
-			y = self.attentions[index](y, hiddenStates: hiddenStates)
+			y = self.attentions[index](y, hiddenStates: hiddenStates, crossCaches: crossCaches?[index])
 		}
 		if let upsample = self.upsamplers.first {
 			y = upsample(moebiusUpsampleNearest(y))
@@ -447,6 +506,33 @@ final class MoebiusTimeEmbedding: Module {
 
 	func callAsFunction(_ x: MLXArray) -> MLXArray {
 		self.linear2(silu(self.linear1(x)))
+	}
+}
+
+// MARK: - MoebiusUNetConditioning
+
+struct MoebiusUNetConditioning {
+	let hiddenStates: MLXArray
+	let downCrossCaches: [[[MoebiusCrossLambdaCache]]]
+	let upCrossCaches: [[[MoebiusCrossLambdaCache]]]
+
+	var arrays: [MLXArray] {
+		var values: [MLXArray] = [self.hiddenStates]
+		for block in self.downCrossCaches {
+			for attention in block {
+				for cache in attention {
+					values.append(contentsOf: cache.arrays)
+				}
+			}
+		}
+		for block in self.upCrossCaches {
+			for attention in block {
+				for cache in attention {
+					values.append(contentsOf: cache.arrays)
+				}
+			}
+		}
+		return values
 	}
 }
 
@@ -485,8 +571,26 @@ public final class MoebiusUNet: Module {
 		self._convOut.wrappedValue = MoebiusDepthwiseSeparableConv(inputChannels: 320, outputChannels: 4)
 	}
 
+	func prepareConditioning(inputIDs: MLXArray) -> MoebiusUNetConditioning {
+		let hiddenStates: MLXArray = self.encoderHiddenProjection(self.embedding(inputIDs))
+		let downPositions: [Int] = [64 * 64, 32 * 32, 16 * 16]
+		let upPositions: [Int] = [16 * 16, 32 * 32, 64 * 64]
+		let downCrossCaches: [[[MoebiusCrossLambdaCache]]] = zip(self.downBlocks, downPositions).map { block, positions in
+			block.attentions.map { $0.prepareCrossCaches(hiddenStates: hiddenStates, positions: positions) }
+		}
+		let upCrossCaches: [[[MoebiusCrossLambdaCache]]] = zip(self.upBlocks, upPositions).map { block, positions in
+			block.attentions.map { $0.prepareCrossCaches(hiddenStates: hiddenStates, positions: positions) }
+		}
+		return MoebiusUNetConditioning(hiddenStates: hiddenStates, downCrossCaches: downCrossCaches, upCrossCaches: upCrossCaches)
+	}
+
 	/// Runs the UNet denoiser.
 	public func callAsFunction(latent: MLXArray, timesteps: MLXArray, inputIDs: MLXArray) -> MLXArray {
+		let conditioning: MoebiusUNetConditioning = self.prepareConditioning(inputIDs: inputIDs)
+		return self(latent: latent, timesteps: timesteps, conditioning: conditioning)
+	}
+
+	func callAsFunction(latent: MLXArray, timesteps: MLXArray, conditioning: MoebiusUNetConditioning) -> MLXArray {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
@@ -499,21 +603,31 @@ public final class MoebiusUNet: Module {
 		timeEmbedding = self.timeEmbedding(timeEmbedding)
 		traceEval("timeEmbedding", timeEmbedding)
 
-		let embedded: MLXArray = self.embedding(inputIDs)
-		let hiddenStates: MLXArray = self.encoderHiddenProjection(embedded)
+		let hiddenStates: MLXArray = conditioning.hiddenStates
 		traceEval("hiddenStates", hiddenStates)
 
 		var y: MLXArray = self.convIn(latent)
 		traceEval("convIn", y)
 		var residuals: [MLXArray] = [y]
 		for (index, block) in self.downBlocks.enumerated() {
-			let (next, blockResiduals) = block(y, timeEmbedding: timeEmbedding, hiddenStates: hiddenStates)
+			let (next, blockResiduals) = block(
+				y,
+				timeEmbedding: timeEmbedding,
+				hiddenStates: hiddenStates,
+				crossCaches: conditioning.downCrossCaches[index]
+			)
 			y = next
 			traceEval("down.\(index)", y)
 			residuals.append(contentsOf: blockResiduals)
 		}
 		for (index, block) in self.upBlocks.enumerated() {
-			y = block(y, residuals: &residuals, timeEmbedding: timeEmbedding, hiddenStates: hiddenStates)
+			y = block(
+				y,
+				residuals: &residuals,
+				timeEmbedding: timeEmbedding,
+				hiddenStates: hiddenStates,
+				crossCaches: conditioning.upCrossCaches[index]
+			)
 			traceEval("up.\(index)", y)
 		}
 		y = self.convNormOut(y)

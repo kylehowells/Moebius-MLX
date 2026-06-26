@@ -921,10 +921,13 @@ struct BenchmarkFixture: ParsableCommand {
 		)
 
 		let startedAt: Date = .init()
+		let maskArray: MLXArray = .init(mask64, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 1]).asType(dtype)
+		let maskedLatentsArray: MLXArray = .init(maskedLatents, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 4]).asType(dtype)
+		let initialLatentsArray: MLXArray = .init(initialLatents, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 4]).asType(dtype)
 		let result: MLXArray = try pipeline.runLatentFixture(
-			mask64: MLXArray(mask64, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 1]).asType(dtype),
-			maskedLatents: MLXArray(maskedLatents, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 4]).asType(dtype),
-			initialLatents: MLXArray(initialLatents, [1, MoebiusImageTensors.latentSize, MoebiusImageTensors.latentSize, 4]).asType(dtype),
+			mask64: maskArray,
+			maskedLatents: maskedLatentsArray,
+			initialLatents: initialLatentsArray,
 			options: options
 		)
 		eval(result)

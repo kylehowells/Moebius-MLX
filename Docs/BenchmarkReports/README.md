@@ -6,6 +6,7 @@ Checked-in reports live here so GitHub renders each benchmark folder with its ta
 
 - [ft_places2-cross-runtime-steps20](ft_places2-cross-runtime-steps20/): current portable report comparing PyTorch, ONNX, and MLX variants. This is the report to cite for public runtime, size, and fidelity comparisons.
 - [ft_places2-onnx-steps20-visible-variants](ft_places2-onnx-steps20-visible-variants/): older focused report comparing demo-visible MLX variants against an ONNX-generated latent fixture. Kept as supplemental quantization history, not as the main public benchmark.
+- [f32-mlx-speed-iteration](f32-mlx-speed-iteration.md): notes from the MLX f32 optimization pass that reduced the f32 fixture from roughly 19s to roughly 11s while preserving PyTorch parity.
 
 ## Regeneration
 

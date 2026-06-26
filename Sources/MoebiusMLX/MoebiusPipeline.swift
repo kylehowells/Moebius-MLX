@@ -47,6 +47,9 @@ public final class MoebiusPipeline: @unchecked Sendable {
 	) throws -> MLXArray {
 		let timesteps: [Int] = self.scheduler.timesteps(steps: options.steps, strength: options.strength)
 		var latents: MLXArray = initialLatents.asType(.float32)
+		let inputIDs: MLXArray = .init(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
+		let conditioning: MoebiusUNetConditioning = self.model.unet.prepareConditioning(inputIDs: inputIDs)
+		eval(conditioning.arrays)
 
 		for (index, timestep) in timesteps.enumerated() {
 			let previous: Int = index + 1 < timesteps.count ? timesteps[index + 1] : -1
@@ -56,7 +59,8 @@ public final class MoebiusPipeline: @unchecked Sendable {
 				mask64: mask64,
 				maskedLatents: maskedLatents,
 				timestep: timestep,
-				guidanceScale: options.guidanceScale
+				guidanceScale: options.guidanceScale,
+				conditioning: conditioning
 			)
 			latents = self.scheduler.step(noise: noise.asType(.float32), sample: latents, timestep: timestep, previousTimestep: previous)
 			asyncEval(latents)
@@ -76,6 +80,24 @@ public final class MoebiusPipeline: @unchecked Sendable {
 		timestep: Int,
 		guidanceScale: Float
 	) throws -> MLXArray {
+		try self.predictNoiseCFG(
+			latents: latents,
+			mask64: mask64,
+			maskedLatents: maskedLatents,
+			timestep: timestep,
+			guidanceScale: guidanceScale,
+			conditioning: nil
+		)
+	}
+
+	func predictNoiseCFG(
+		latents: MLXArray,
+		mask64: MLXArray,
+		maskedLatents: MLXArray,
+		timestep: Int,
+		guidanceScale: Float,
+		conditioning: MoebiusUNetConditioning?
+	) throws -> MLXArray {
 		let dtype: DType = self.model.manifest.precision.dtype
 		let input: MLXArray = concatenated(
 			[latents.asType(dtype), mask64.asType(dtype), maskedLatents.asType(dtype)],
@@ -83,8 +105,14 @@ public final class MoebiusPipeline: @unchecked Sendable {
 		)
 		let batchedInput: MLXArray = concatenated([input, input], axis: 0)
 		let timesteps: MLXArray = .init([timestep, timestep])
-		let inputIDs: MLXArray = .init(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
-		let noise: MLXArray = self.model.unet(latent: batchedInput, timesteps: timesteps, inputIDs: inputIDs)
+		let noise: MLXArray
+		if let conditioning {
+			noise = self.model.unet(latent: batchedInput, timesteps: timesteps, conditioning: conditioning)
+		}
+		else {
+			let inputIDs: MLXArray = .init(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
+			noise = self.model.unet(latent: batchedInput, timesteps: timesteps, inputIDs: inputIDs)
+		}
 		let parts: [MLXArray] = noise.split(parts: 2, axis: 0)
 		return parts[0] + MLXArray(guidanceScale).asType(dtype) * (parts[1] - parts[0])
 	}
