@@ -254,8 +254,10 @@ do
 	require_png "$cross_runtime_report_dir/$chart"
 done
 for expected in \
-	'PyTorch,pytorch' \
-	'ONNX,onnx' \
+	'PyTorch CPU,pytorch' \
+	'PyTorch MPS,pytorch' \
+	'ONNX CPU,onnx' \
+	'ONNX CoreML,onnx' \
 	'ft_places2-f32,mlx' \
 	'ft_places2-q4-all-spatial-vae,mlx'
 do

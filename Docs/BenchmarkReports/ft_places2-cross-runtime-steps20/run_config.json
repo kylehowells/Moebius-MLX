@@ -4,8 +4,15 @@
   "seed": 0,
   "guidance": 2.0,
   "strength": 0.99,
-  "torch_device": "cpu",
-  "onnx_provider": "CPUExecutionProvider",
+  "torch_devices": [
+    "cpu",
+    "mps"
+  ],
+  "onnx_providers": [
+    "CPUExecutionProvider",
+    "CoreMLExecutionProvider"
+  ],
+  "reference": "PyTorch CPU",
   "mlx_variants": [
     "ft_places2-f32",
     "ft_places2-f16",

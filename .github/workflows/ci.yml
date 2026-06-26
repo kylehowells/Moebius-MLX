@@ -119,7 +119,7 @@ jobs:
               if path.suffix == ".png" and not path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
                   raise SystemExit(f"not a PNG: {path}")
           csv_text = (cross_runtime / "benchmark.csv").read_text()
-          for expected in ["PyTorch,pytorch", "ONNX,onnx", "ft_places2-f32,mlx", "ft_places2-q4-all-spatial-vae,mlx"]:
+          for expected in ["PyTorch CPU,pytorch", "PyTorch MPS,pytorch", "ONNX CPU,onnx", "ONNX CoreML,onnx", "ft_places2-f32,mlx", "ft_places2-q4-all-spatial-vae,mlx"]:
               if expected not in csv_text:
                   raise SystemExit(f"missing cross-runtime row: {expected}")
           PY

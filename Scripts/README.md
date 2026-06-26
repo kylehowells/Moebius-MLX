@@ -12,8 +12,8 @@ python3 -m venv .venv
 
 The script compares:
 
-- PyTorch reference implementation from the original Moebius code and checkpoint.
-- ONNX export from `simonw/Moebius-ONNX`.
+- PyTorch reference implementation from the original Moebius code and checkpoint, on CPU and MPS where available.
+- ONNX export from `simonw/Moebius-ONNX`, on CPU and CoreML where available.
 - MLX variants from the `MoebiusMLX` Swift package.
 
 It writes:
@@ -37,8 +37,8 @@ By default, missing public artifacts are downloaded into `BenchmarkArtifacts/cro
 
 Useful options:
 
-- `--torch-device cpu|mps|auto`: PyTorch device. Default is `cpu` for reproducible public runs.
-- `--onnx-provider CPUExecutionProvider`: ONNX Runtime provider.
+- `--torch-devices cpu,mps`: comma-separated PyTorch devices. Unavailable devices are skipped.
+- `--onnx-providers CPUExecutionProvider,CoreMLExecutionProvider`: comma-separated ONNX Runtime providers. Unavailable providers are skipped.
 - `--mlx-variants ft_places2-f32,ft_places2-f16,...`: comma-separated MLX variants.
 - `--no-download`: fail instead of downloading missing public artifacts.
 

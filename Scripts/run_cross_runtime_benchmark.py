@@ -173,6 +173,42 @@ def read_raw_tensor(path: Path, shape: tuple[int, ...]) -> np.ndarray:
     return np.fromfile(path, dtype="<f4").reshape(shape)
 
 
+def safe_name(value: str) -> str:
+    return "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in value)
+
+
+def parse_list(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def available_torch_devices(requested: list[str]) -> list[str]:
+    torch = require_module("torch")
+    resolved: list[str] = []
+    for device in requested:
+        if device == "auto":
+            resolved.append("mps" if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available() else "cpu")
+        elif device == "mps":
+            if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+                resolved.append(device)
+            else:
+                print("Skipping PyTorch MPS because it is not available on this machine.", file=sys.stderr)
+        else:
+            resolved.append(device)
+    return list(dict.fromkeys(resolved))
+
+
+def available_onnx_providers(requested: list[str]) -> list[str]:
+    ort = require_module("onnxruntime")
+    available = set(ort.get_available_providers())
+    resolved: list[str] = []
+    for provider in requested:
+        if provider in available:
+            resolved.append(provider)
+        else:
+            print(f"Skipping ONNX provider {provider}; available providers: {sorted(available)}", file=sys.stderr)
+    return resolved
+
+
 def make_reference_inputs(args: argparse.Namespace) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     image_nchw, masked_image, mask_bin = fixture.prepare_inputs(args.image, args.mask)
     mask64 = fixture.make_mask64(mask_bin)
@@ -180,11 +216,17 @@ def make_reference_inputs(args: argparse.Namespace) -> tuple[np.ndarray, np.ndar
     return image_nchw, masked_image, mask64, init_latents
 
 
-def run_onnx(args: argparse.Namespace, masked_image: np.ndarray, mask64: np.ndarray, init_latents: np.ndarray) -> tuple[np.ndarray, np.ndarray, float, float]:
+def run_onnx(
+    args: argparse.Namespace,
+    provider: str,
+    masked_image: np.ndarray,
+    mask64: np.ndarray,
+    init_latents: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float, float]:
     ort = require_module("onnxruntime")
     load_started = time.perf_counter()
-    encoder = ort.InferenceSession(str(args.onnx_root / "vae_encoder.onnx"), providers=[args.onnx_provider])
-    unet = ort.InferenceSession(str(args.onnx_root / "unet.onnx"), providers=[args.onnx_provider])
+    encoder = ort.InferenceSession(str(args.onnx_root / "vae_encoder.onnx"), providers=[provider])
+    unet = ort.InferenceSession(str(args.onnx_root / "unet.onnx"), providers=[provider])
     load_seconds = time.perf_counter() - load_started
 
     run_started = time.perf_counter()
@@ -211,19 +253,25 @@ def run_onnx(args: argparse.Namespace, masked_image: np.ndarray, mask64: np.ndar
     return masked_lat.astype(np.float32), latents.astype(np.float32), load_seconds, inference_seconds
 
 
-def torch_device(args: argparse.Namespace):
+def torch_device(device_name: str):
     torch = require_module("torch")
-    if args.torch_device == "auto":
+    if device_name == "auto":
         if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
             return torch.device("mps")
         return torch.device("cpu")
-    return torch.device(args.torch_device)
+    return torch.device(device_name)
 
 
-def run_torch(args: argparse.Namespace, masked_image: np.ndarray, mask64: np.ndarray, init_latents: np.ndarray) -> tuple[np.ndarray, np.ndarray, float, float, str]:
+def run_torch(
+    args: argparse.Namespace,
+    device_name: str,
+    masked_image: np.ndarray,
+    mask64: np.ndarray,
+    init_latents: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float, float, str]:
     torch = require_module("torch")
     require_module("diffusers")
-    device = torch_device(args)
+    device = torch_device(device_name)
 
     sys.path.insert(0, str(args.pytorch_code_root))
     cwd = Path.cwd()
@@ -338,7 +386,7 @@ def resolve_mlx_variant(args: argparse.Namespace, cli: Path, variant: str) -> Pa
     return download_mlx_variant(cli, variant, args.mlx_download_base, args.hf_token)
 
 
-def run_mlx_variants(args: argparse.Namespace, reference: np.ndarray) -> list[RuntimeRow]:
+def run_mlx_variants(args: argparse.Namespace, reference: np.ndarray, reference_name: str) -> list[RuntimeRow]:
     cli = build_swift_cli()
     rows: list[RuntimeRow] = []
     for variant in args.mlx_variants:
@@ -365,7 +413,7 @@ def run_mlx_variants(args: argparse.Namespace, reference: np.ndarray) -> list[Ru
                 name=variant,
                 backend="mlx",
                 variant=variant,
-                reference=args.reference_backend,
+                reference=reference_name,
                 model_mb=float(parsed["model_mb_total"]),
                 max_abs=float(parsed["max_abs"]),
                 mean_abs=float(parsed["mean_abs"]),
@@ -421,7 +469,7 @@ def write_csv(path: Path, rows: list[RuntimeRow]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = list(RuntimeRow.__dataclass_fields__.keys())
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         for row in rows:
             writer.writerow(row.__dict__)
@@ -466,7 +514,7 @@ def plot_reports(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
         fig.savefig(args.output_dir / filename, dpi=160)
         plt.close(fig)
 
-    save_grouped(["max_abs", "mean_abs", "rmse", "p99_abs"], "Fidelity vs PyTorch Reference", "absolute latent error, log scale", "fidelity_errors.png", log=True)
+    save_grouped(["max_abs", "mean_abs", "rmse", "p99_abs"], "Fidelity vs Reference", "absolute latent error, log scale", "fidelity_errors.png", log=True)
     save_grouped(["inference_seconds", "load_seconds", "total_seconds"], "Runtime Performance", "seconds", "performance_timings.png")
 
     fig, ax = plt.subplots(figsize=(12, 5.8))
@@ -494,7 +542,7 @@ def plot_reports(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
             ax.annotate(row.name.replace("ft_places2-", ""), (getattr(row, x_key), row.rmse), xytext=(5, 5), textcoords="offset points", fontsize=8)
         ax.set_title(title)
         ax.set_xlabel(xlabel)
-        ax.set_ylabel("RMSE vs PyTorch")
+        ax.set_ylabel("RMSE vs reference")
         ax.grid(alpha=0.25)
         fig.tight_layout()
         fig.savefig(args.output_dir / filename, dpi=160)
@@ -534,13 +582,13 @@ def make_latent_contact_sheet(args: argparse.Namespace, rows: list[RuntimeRow], 
     except OSError:
         title_font = body_font = ImageFont.load_default()
     draw.text((16, 18), "Moebius Cross-Runtime Latent Comparison", font=title_font, fill=(25, 29, 35))
-    draw.text((16, 45), "Top row per variant: latent channels. Bottom row: absolute error vs PyTorch.", font=body_font, fill=(73, 80, 87))
+    draw.text((16, 45), "Top row per variant: latent channels. Bottom row: absolute error vs the first PyTorch row.", font=body_font, fill=(73, 80, 87))
 
     ref_nhwc = reference.transpose(0, 2, 3, 1)[0]
     for row_index, name in enumerate(variants):
         row = rows[row_index]
         y = top + row_index * row_h
-        path = latent_dir / f"{name}.bin"
+        path = latent_dir / f"{safe_name(name)}.bin"
         if not path.exists():
             continue
         values = read_raw_tensor(path, reference.shape if row.backend in {"onnx", "pytorch"} else (1, 64, 64, 4))
@@ -564,9 +612,9 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
     lines = [
         f"# Moebius {args.family} Cross-Runtime Benchmark",
         "",
-        f"Reference: `{args.reference_backend}`. Steps: `{args.steps}`. Seed: `{args.seed}`. Guidance: `{args.guidance}`. Strength: `{args.strength}`.",
+        f"Reference: first requested PyTorch row. Steps: `{args.steps}`. Seed: `{args.seed}`. Guidance: `{args.guidance}`. Strength: `{args.strength}`.",
         "",
-        "This benchmark compares deterministic latent denoising across PyTorch, ONNX, and MLX. PyTorch is the default reference because it is the original implementation. MLX rows consume the reference fixture generated from the PyTorch run, so those rows isolate the MLX UNet/scheduler path against the PyTorch latent inputs.",
+        "This benchmark compares deterministic latent denoising across PyTorch, ONNX, and MLX. CPU and accelerated PyTorch/ONNX rows are reported separately so performance comparisons can be made between matching device classes. The first requested PyTorch row is used only as the numeric fidelity reference because it is the original implementation; performance comparisons should be read row-by-row by backend/device.",
         "",
         "## Results",
         "",
@@ -579,6 +627,13 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
         )
     lines.extend(
         [
+            "",
+            "## Interpretation",
+            "",
+            "- Use `PyTorch MPS` versus `MLX` rows for the Apple GPU-backed speed comparison.",
+            "- `PyTorch CPU` and `ONNX CPU` are included as explicit CPU baselines, not as the headline speed comparison.",
+            "- `ONNX CoreML` uses ONNX Runtime's CoreML provider where available. Some graph nodes can still run on CPU, and provider setup is included in `load s`.",
+            "- Fidelity metrics are measured against the first requested PyTorch row, which is the original implementation path used as a numeric reference.",
             "",
             "## Charts",
             "",
@@ -623,6 +678,8 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
             "- `--pytorch-code-root`: original Moebius Python repository.",
             "- `--pytorch-weights-root`: Hugging Face `hustvl/Moebius` checkpoint root.",
             "- `--vae-dir`: PixelHacker VAE directory containing `config.json` and `diffusion_pytorch_model.bin`.",
+            "- `--torch-devices`: comma-separated PyTorch devices, for example `cpu,mps`.",
+            "- `--onnx-providers`: comma-separated ONNX Runtime providers, for example `CPUExecutionProvider,CoreMLExecutionProvider`.",
             "- `--onnx-root`: ONNX directory containing `vae_encoder.onnx` and `unet.onnx`.",
             "- `--mlx-model-root`: directory containing MLX variant folders.",
             "",
@@ -643,8 +700,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--artifact-dir", type=Path, default=DEFAULT_ARTIFACT_DIR)
     parser.add_argument("--reference-backend", choices=["pytorch"], default="pytorch")
-    parser.add_argument("--torch-device", choices=["cpu", "mps", "auto"], default="cpu")
-    parser.add_argument("--onnx-provider", default="CPUExecutionProvider")
+    parser.add_argument("--torch-devices", default="cpu,mps", help="Comma-separated PyTorch devices. Default: cpu,mps.")
+    parser.add_argument("--torch-device", choices=["cpu", "mps", "auto"], help="Deprecated alias for --torch-devices with one device.")
+    parser.add_argument("--onnx-providers", default="CPUExecutionProvider,CoreMLExecutionProvider", help="Comma-separated ONNX Runtime providers.")
+    parser.add_argument("--onnx-provider", help="Deprecated alias for --onnx-providers with one provider.")
     parser.add_argument("--mlx-variants", default=",".join(MLX_VARIANTS))
     parser.add_argument("--mlx-model-root", type=Path, default=None)
     parser.add_argument("--mlx-download-base", type=Path)
@@ -660,7 +719,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-download", action="store_true", help="Fail instead of downloading missing public model artifacts.")
     args = parser.parse_args()
     args.download_missing = not args.no_download
-    args.mlx_variants = [item.strip() for item in args.mlx_variants.split(",") if item.strip()]
+    args.torch_devices = parse_list(args.torch_device or args.torch_devices)
+    args.onnx_providers = parse_list(args.onnx_provider or args.onnx_providers)
+    args.mlx_variants = parse_list(args.mlx_variants)
     args.pytorch_code_root = args.pytorch_code_root or Path(os.environ.get("MOEBIUS_PYTORCH_CODE_ROOT", args.artifact_dir / "code" / "Moebius"))
     args.pytorch_weights_root = args.pytorch_weights_root or Path(os.environ.get("MOEBIUS_PYTORCH_WEIGHTS_ROOT", args.artifact_dir / "models" / "Moebius"))
     args.vae_dir = args.vae_dir or Path(os.environ.get("MOEBIUS_VAE_DIR", args.artifact_dir / "models" / "PixelHacker" / "vae"))
@@ -681,48 +742,70 @@ def main() -> None:
     ensure_reference_artifacts(args)
     _image_nchw, masked_image, mask64, init_latents = make_reference_inputs(args)
 
-    print("Running PyTorch reference", file=sys.stderr)
-    pytorch_masked, pytorch_final, pytorch_load, pytorch_inference, pytorch_device = run_torch(args, masked_image, mask64, init_latents)
-    write_reference_fixture(args, pytorch_masked, mask64, init_latents, pytorch_final)
-    write_raw_tensor(args.output_dir / "latents" / "PyTorch.bin", pytorch_final)
-    reference = pytorch_final
+    torch_devices = available_torch_devices(args.torch_devices)
+    if not torch_devices:
+        raise SystemExit("No requested PyTorch devices are available.")
 
-    rows: list[RuntimeRow] = [
-        row_from_values(
-            "PyTorch",
-            "pytorch",
-            args.family,
-            args.reference_backend,
-            pytorch_final,
-            reference,
-            directory_size_mb(args.pytorch_weights_root / args.family) + directory_size_mb(args.vae_dir),
-            pytorch_load,
-            pytorch_inference,
-            pytorch_device,
-            notes="reference",
-        )
-    ]
+    rows: list[RuntimeRow] = []
+    reference: np.ndarray | None = None
+    reference_masked: np.ndarray | None = None
+    reference_name = ""
 
-    print("Running ONNX", file=sys.stderr)
-    _onnx_masked, onnx_final, onnx_load, onnx_inference = run_onnx(args, masked_image, mask64, init_latents)
-    write_raw_tensor(args.output_dir / "latents" / "ONNX.bin", onnx_final)
-    rows.append(
-        row_from_values(
-            "ONNX",
-            "onnx",
-            args.family,
-            args.reference_backend,
-            onnx_final,
-            reference,
-            directory_size_mb(args.onnx_root, [args.onnx_root / "vae_encoder.onnx", args.onnx_root / "unet.onnx", args.onnx_root / "vae_decoder.onnx"]),
-            onnx_load,
-            onnx_inference,
-            args.onnx_provider,
+    for index, device_name in enumerate(torch_devices):
+        name = f"PyTorch {device_name.upper()}"
+        print(f"Running {name}", file=sys.stderr)
+        pytorch_masked, pytorch_final, pytorch_load, pytorch_inference, pytorch_device = run_torch(args, device_name, masked_image, mask64, init_latents)
+        write_raw_tensor(args.output_dir / "latents" / f"{safe_name(name)}.bin", pytorch_final)
+        if reference is None:
+            reference = pytorch_final
+            reference_masked = pytorch_masked
+            reference_name = name
+            write_reference_fixture(args, pytorch_masked, mask64, init_latents, pytorch_final)
+        rows.append(
+            row_from_values(
+                name,
+                "pytorch",
+                args.family,
+                reference_name,
+                pytorch_final,
+                reference,
+                directory_size_mb(args.pytorch_weights_root / args.family) + directory_size_mb(args.vae_dir),
+                pytorch_load,
+                pytorch_inference,
+                pytorch_device,
+                notes="reference" if index == 0 else "",
+            )
         )
-    )
+
+    assert reference is not None
+    assert reference_masked is not None
+
+    onnx_providers = available_onnx_providers(args.onnx_providers)
+    if not onnx_providers:
+        print("No requested ONNX providers are available; skipping ONNX rows.", file=sys.stderr)
+    for provider in onnx_providers:
+        provider_label = provider.removesuffix("ExecutionProvider")
+        name = f"ONNX {provider_label}"
+        print(f"Running {name}", file=sys.stderr)
+        _onnx_masked, onnx_final, onnx_load, onnx_inference = run_onnx(args, provider, masked_image, mask64, init_latents)
+        write_raw_tensor(args.output_dir / "latents" / f"{safe_name(name)}.bin", onnx_final)
+        rows.append(
+            row_from_values(
+                name,
+                "onnx",
+                args.family,
+                reference_name,
+                onnx_final,
+                reference,
+                directory_size_mb(args.onnx_root, [args.onnx_root / "vae_encoder.onnx", args.onnx_root / "unet.onnx", args.onnx_root / "vae_decoder.onnx"]),
+                onnx_load,
+                onnx_inference,
+                provider,
+            )
+        )
 
     print("Running MLX variants", file=sys.stderr)
-    rows.extend(run_mlx_variants(args, reference))
+    rows.extend(run_mlx_variants(args, reference, reference_name))
     write_csv(args.output_dir / "benchmark.csv", rows)
     plot_reports(args, rows)
     make_latent_contact_sheet(args, rows, reference)
@@ -735,8 +818,9 @@ def main() -> None:
                 "seed": args.seed,
                 "guidance": args.guidance,
                 "strength": args.strength,
-                "torch_device": args.torch_device,
-                "onnx_provider": args.onnx_provider,
+                "torch_devices": torch_devices,
+                "onnx_providers": onnx_providers,
+                "reference": reference_name,
                 "mlx_variants": args.mlx_variants,
             },
             indent=2,
