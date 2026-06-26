@@ -162,6 +162,7 @@ Subcommands:
 | `vae-smoke` | Run VAE encode/decode on a zero image tensor and print shapes. |
 | `u-net-smoke` | Run one CFG UNet prediction on zero latent inputs and print the output shape. |
 | `image-smoke` | Run the full image pipeline on a synthetic sample and print output stats. |
+| `generate-image` | Run one file-backed image/mask pair through a converted model and write a PNG. |
 | `compare-image` | Run a deterministic sample across precision variants and compare image outputs. |
 | `benchmark-image` | Compare synthetic or file-backed image output against a reference model. |
 | `benchmark-fixture` | Compare MLX final latents against a deterministic PyTorch/ONNX fixture. |
@@ -206,7 +207,7 @@ Scripts/run_benchmark_report.sh \
 
 ## UIKit Demo Integration
 
-The demo app uses the same `MoebiusPipeline.runImageRGBFloats` API as the CLI. It resolves model variants from bundle resources, Application Support, Documents, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, and an optional current-user development model folder when present for local testing. `MOEBIUS_MODEL_ROOT` is kept as a demo/autorun compatibility alias for the shared resolver's `MOEBIUS_MLX_MODEL_DIR`. The Mac Catalyst autorun path is controlled by:
+The demo app uses the same `MoebiusPipeline.runImageRGBFloats` API as the CLI. It resolves model variants from bundle resources, Application Support, Documents, `MOEBIUS_MLX_MODEL_DIR`, `MOEBIUS_MODEL_ROOT`, and standard Hugging Face materialized snapshot locations. `MOEBIUS_MODEL_ROOT` is kept as a demo/autorun compatibility alias for the shared resolver's `MOEBIUS_MLX_MODEL_DIR`. The Mac Catalyst autorun path is controlled by:
 
 ```text
 MOEBIUS_DEMO_AUTORUN=1

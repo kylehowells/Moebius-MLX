@@ -12,7 +12,7 @@ Swift and MLX port of Moebius image inpainting for Apple Silicon macOS, Mac Cata
 - `Scripts`: conversion, validation, staging, and benchmark helpers.
 - `Docs/README.md`: documentation index.
 - `Docs/API.md`: detailed API and CLI notes.
-- `Docs/PROJECT.md`: implementation notes, benchmark results, and current limitations.
+- `Docs/PROJECT.md`: architecture, conversion, quantization, benchmark, and limitation notes.
 - `Docs/BenchmarkReports`: checked-in benchmark CSV/TSV data, reports, and charts.
 
 ## Requirements

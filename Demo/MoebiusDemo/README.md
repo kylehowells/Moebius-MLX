@@ -47,8 +47,7 @@ The demo checks these locations before offering a download:
 3. App Documents.
 4. `MOEBIUS_MLX_MODEL_DIR`.
 5. `MOEBIUS_MODEL_ROOT`.
-6. An optional current-user development model folder.
-7. The standard Hugging Face cache/materialized snapshot location.
+6. The standard Hugging Face cache/materialized snapshot location.
 
 If a model is still missing, the app prompts to download the selected Hugging Face repo and reports the expected download size when known.
 

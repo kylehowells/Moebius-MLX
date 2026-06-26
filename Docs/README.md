@@ -5,7 +5,7 @@ This directory is the public documentation index for the Swift MLX library, demo
 ## Files
 
 - [API.md](API.md): Swift API, CLI usage, model loading, download behavior, and device/demo notes.
-- [PROJECT.md](PROJECT.md): implementation notes, conversion decisions, benchmark history, current limitations, and validation history.
+- [PROJECT.md](PROJECT.md): architecture, conversion decisions, quantization notes, benchmark interpretation, demo behavior, and current limitations.
 - [BenchmarkReports](BenchmarkReports/): checked-in benchmark outputs with CSV/TSV data, charts, and report pages.
 
 ## Current Benchmark Report
