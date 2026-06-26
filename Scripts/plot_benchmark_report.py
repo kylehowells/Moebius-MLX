@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 
 FIDELITY_COLUMNS = ["max_abs", "mean_abs", "rmse", "p99_abs"]
-SPEED_COLUMNS = ["inference_seconds", "load_seconds", "total_seconds"]
+SPEED_COLUMNS = ["load_seconds", "inference_seconds", "total_seconds"]
 
 
 def parse_float(value: str) -> float:
@@ -100,8 +100,8 @@ def save_speed_chart(rows: list[dict[str, float | str]], output: Path) -> None:
     x = list(range(len(names)))
     width = 0.25
     fig, ax = plt.subplots(figsize=(12, 6))
-    colors = ["#2563eb", "#f59e0b", "#64748b"]
-    labels = ["inference", "load", "total"]
+    colors = ["#f59e0b", "#2563eb", "#64748b"]
+    labels = ["load", "inference", "total"]
     for index, (column, label) in enumerate(zip(SPEED_COLUMNS, labels)):
         offsets = [position + (index - 1) * width for position in x]
         ax.bar(offsets, values(rows, column), width=width, label=label, color=colors[index])
@@ -144,12 +144,12 @@ def write_summary(rows: list[dict[str, float | str]], output_dir: Path, source: 
         "",
         f"Source TSV: `{source}`",
         "",
-        "| variant | model MB | max abs | mean abs | RMSE | p99 abs | PSNR dB | cosine | inference s | load s | total s |",
+        "| variant | model MB | max abs | mean abs | RMSE | p99 abs | PSNR dB | cosine | load s | inference s | total s |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
-            "| {variant} | {model_mb:.2f} | {max_abs:.6g} | {mean_abs:.6g} | {rmse:.6g} | {p99_abs:.6g} | {psnr_db:.3f} | {cosine:.8f} | {inference_seconds:.3f} | {load_seconds:.3f} | {total_seconds:.3f} |".format(
+            "| {variant} | {model_mb:.2f} | {max_abs:.6g} | {mean_abs:.6g} | {rmse:.6g} | {p99_abs:.6g} | {psnr_db:.3f} | {cosine:.8f} | {load_seconds:.3f} | {inference_seconds:.3f} | {total_seconds:.3f} |".format(
                 variant=row["variant"],
                 model_mb=float(row["model_mb"]),
                 max_abs=float(row["max_abs"]),

@@ -516,7 +516,8 @@ def plot_reports(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
         width = 0.8 / len(keys)
         fig, ax = plt.subplots(figsize=(13, 6))
         for index, key in enumerate(keys):
-            ax.bar(x + (index - (len(keys) - 1) / 2) * width, [getattr(row, key) for row in chart_rows], width=width, label=key)
+            label = key.replace("_seconds", "").replace("_", " ")
+            ax.bar(x + (index - (len(keys) - 1) / 2) * width, [getattr(row, key) for row in chart_rows], width=width, label=label)
         if log:
             ax.set_yscale("log")
         ax.set_title(title)
@@ -530,7 +531,7 @@ def plot_reports(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
         plt.close(fig)
 
     save_grouped(["max_abs", "mean_abs", "rmse", "p99_abs"], "Competitive Fidelity vs Reference", "absolute latent error, log scale", "fidelity_errors.png", log=True)
-    save_grouped(["inference_seconds", "load_seconds", "total_seconds"], "Competitive Runtime Performance", "seconds", "performance_timings.png")
+    save_grouped(["load_seconds", "inference_seconds", "total_seconds"], "Competitive Runtime Performance", "seconds", "performance_timings.png")
 
     fig, ax = plt.subplots(figsize=(12, 5.8))
     bars = ax.bar(names, [row.model_mb for row in chart_rows], color="#2563eb")
@@ -652,12 +653,12 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
         "",
         "## Results",
         "",
-        "| name | backend | model MB | max abs | mean abs | RMSE | p99 abs | PSNR dB | cosine | inference s | load s | total s | device |",
+        "| name | backend | model MB | max abs | mean abs | RMSE | p99 abs | PSNR dB | cosine | load s | inference s | total s | device |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in rows:
         lines.append(
-            f"| {row.name} | {row.backend} | {row.model_mb:.2f} | {finite(row.max_abs)} | {finite(row.mean_abs)} | {finite(row.rmse)} | {finite(row.p99_abs)} | {finite(row.psnr_db)} | {row.cosine:.8f} | {row.inference_seconds:.3f} | {row.load_seconds:.3f} | {row.total_seconds:.3f} | {row.device} |"
+            f"| {row.name} | {row.backend} | {row.model_mb:.2f} | {finite(row.max_abs)} | {finite(row.mean_abs)} | {finite(row.rmse)} | {finite(row.p99_abs)} | {finite(row.psnr_db)} | {row.cosine:.8f} | {row.load_seconds:.3f} | {row.inference_seconds:.3f} | {row.total_seconds:.3f} | {row.device} |"
         )
     lines.extend(
         [
