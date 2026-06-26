@@ -24,6 +24,8 @@ It writes:
 - `latent_contact_sheet.png`.
 - `reference_fixture/` and `latents/` raw tensors used to calculate the metrics.
 
+The CSV and report table include every requested backend/device row. Chart images omit CPU baselines and rows above `--chart-max-total-seconds` by default, so slow diagnostic rows do not flatten the useful GPU/MLX comparisons.
+
 By default, missing public artifacts are downloaded into `BenchmarkArtifacts/cross-runtime`, which is ignored by Git. You can use existing local artifacts instead:
 
 ```bash
@@ -39,6 +41,8 @@ Useful options:
 
 - `--torch-devices cpu,mps`: comma-separated PyTorch devices. Unavailable devices are skipped.
 - `--onnx-providers CPUExecutionProvider,CoreMLExecutionProvider`: comma-separated ONNX Runtime providers. Unavailable providers are skipped.
+- `--chart-max-total-seconds 60`: keep slower rows in the CSV/table but omit them from chart images.
+- `--chart-include-devices MLX,mps`: optional comma-separated chart allow-list for row device/provider names.
 - `--mlx-variants ft_places2-f32,ft_places2-f16,...`: comma-separated MLX variants.
 - `--no-download`: fail instead of downloading missing public artifacts.
 

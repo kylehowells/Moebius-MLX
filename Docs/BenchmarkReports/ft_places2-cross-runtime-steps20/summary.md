@@ -2,7 +2,7 @@
 
 Reference: first requested PyTorch row. Steps: `20`. Seed: `0`. Guidance: `2.0`. Strength: `0.99`.
 
-This benchmark compares deterministic latent denoising across PyTorch, ONNX, and MLX. CPU and accelerated PyTorch/ONNX rows are reported separately so performance comparisons can be made between matching device classes. The first requested PyTorch row is used only as the numeric fidelity reference because it is the original implementation; performance comparisons should be read row-by-row by backend/device.
+This benchmark compares deterministic latent denoising across PyTorch, ONNX, and MLX. CPU and slow provider-fallback rows stay in the CSV/table for completeness, but the charts focus on competitive Apple GPU/MLX timings so the useful 12-20 second differences remain visible. The first requested PyTorch row is used only as the numeric fidelity reference because it is the original implementation; performance comparisons should be read row-by-row by backend/device.
 
 ## Results
 
@@ -24,8 +24,11 @@ This benchmark compares deterministic latent denoising across PyTorch, ONNX, and
 ## Interpretation
 
 - Use `PyTorch MPS` versus `MLX` rows for the Apple GPU-backed speed comparison.
-- `PyTorch CPU` and `ONNX CPU` are included as explicit CPU baselines, not as the headline speed comparison.
-- `ONNX CoreML` uses ONNX Runtime's CoreML provider where available. Some graph nodes can still run on CPU, and provider setup is included in `load s`.
+- `PyTorch CPU`, `ONNX CPU`, and very slow provider fallback rows are included in the table and CSV but omitted from the chart images.
+- Chart rows: `PyTorch MPS`, `ft_places2-f32`, `ft_places2-f16`, `ft_places2-q8`, `ft_places2-q4`, `ft_places2-mxfp8`, `ft_places2-mxfp4`, `ft_places2-q4-ff-spatial-vae`, `ft_places2-q4-all-spatial-vae`.
+- Rows omitted from charts: `PyTorch CPU`, `ONNX CPU`, `ONNX CoreML`.
+- ONNX Runtime providers available in this run: `CoreMLExecutionProvider, AzureExecutionProvider, CPUExecutionProvider`. No native ONNX GPU provider such as CUDA, DirectML, ROCm, MIGraphX, or TensorRT was available.
+- `ONNX CoreML` uses ONNX Runtime's CoreML provider where available. In this run it was slower than CPU because only part of the graph used CoreML and provider setup is included in `load s`.
 - Fidelity metrics are measured against the first requested PyTorch row, which is the original implementation path used as a numeric reference.
 
 ## Charts
@@ -73,5 +76,7 @@ Useful path overrides:
 - `--vae-dir`: PixelHacker VAE directory containing `config.json` and `diffusion_pytorch_model.bin`.
 - `--torch-devices`: comma-separated PyTorch devices, for example `cpu,mps`.
 - `--onnx-providers`: comma-separated ONNX Runtime providers, for example `CPUExecutionProvider,CoreMLExecutionProvider`.
+- `--chart-max-total-seconds`: omit very slow rows from chart images while keeping them in CSV/table output.
+- `--chart-include-devices`: optional comma-separated allow-list for chart devices/providers.
 - `--onnx-root`: ONNX directory containing `vae_encoder.onnx` and `unet.onnx`.
 - `--mlx-model-root`: directory containing MLX variant folders.

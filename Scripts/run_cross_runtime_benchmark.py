@@ -492,16 +492,31 @@ def import_matplotlib():
     return plt
 
 
+def chart_rows_for(args: argparse.Namespace, rows: list[RuntimeRow]) -> list[RuntimeRow]:
+    included_devices = set(getattr(args, "chart_include_devices", []))
+    chart_rows: list[RuntimeRow] = []
+    for row in rows:
+        if included_devices and row.device not in included_devices:
+            continue
+        if row.device in {"cpu", "CPUExecutionProvider"}:
+            continue
+        if row.total_seconds > args.chart_max_total_seconds:
+            continue
+        chart_rows.append(row)
+    return chart_rows or rows
+
+
 def plot_reports(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
     plt = import_matplotlib()
-    names = [row.name for row in rows]
+    chart_rows = chart_rows_for(args, rows)
+    names = [row.name for row in chart_rows]
 
     def save_grouped(keys: list[str], title: str, ylabel: str, filename: str, log: bool = False) -> None:
-        x = np.arange(len(rows))
+        x = np.arange(len(chart_rows))
         width = 0.8 / len(keys)
         fig, ax = plt.subplots(figsize=(13, 6))
         for index, key in enumerate(keys):
-            ax.bar(x + (index - (len(keys) - 1) / 2) * width, [getattr(row, key) for row in rows], width=width, label=key)
+            ax.bar(x + (index - (len(keys) - 1) / 2) * width, [getattr(row, key) for row in chart_rows], width=width, label=key)
         if log:
             ax.set_yscale("log")
         ax.set_title(title)
@@ -514,19 +529,19 @@ def plot_reports(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
         fig.savefig(args.output_dir / filename, dpi=160)
         plt.close(fig)
 
-    save_grouped(["max_abs", "mean_abs", "rmse", "p99_abs"], "Fidelity vs Reference", "absolute latent error, log scale", "fidelity_errors.png", log=True)
-    save_grouped(["inference_seconds", "load_seconds", "total_seconds"], "Runtime Performance", "seconds", "performance_timings.png")
+    save_grouped(["max_abs", "mean_abs", "rmse", "p99_abs"], "Competitive Fidelity vs Reference", "absolute latent error, log scale", "fidelity_errors.png", log=True)
+    save_grouped(["inference_seconds", "load_seconds", "total_seconds"], "Competitive Runtime Performance", "seconds", "performance_timings.png")
 
     fig, ax = plt.subplots(figsize=(12, 5.8))
-    bars = ax.bar(names, [row.model_mb for row in rows], color="#2563eb")
+    bars = ax.bar(names, [row.model_mb for row in chart_rows], color="#2563eb")
     ax.axhline(200, color="#dc2626", linestyle="--", linewidth=1.5)
-    ax.text(len(rows) - 0.5, 200, " 200 MB target", color="#dc2626", va="bottom")
-    ax.set_title("Model Package Size")
+    ax.text(len(chart_rows) - 0.5, 200, " 200 MB target", color="#dc2626", va="bottom")
+    ax.set_title("Competitive Model Package Size")
     ax.set_ylabel("MB")
-    ax.set_xticks(np.arange(len(rows)))
+    ax.set_xticks(np.arange(len(chart_rows)))
     ax.set_xticklabels(names, rotation=30, ha="right")
     ax.grid(axis="y", alpha=0.25)
-    for bar, row in zip(bars, rows):
+    for bar, row in zip(bars, chart_rows):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{row.model_mb:.0f}", ha="center", va="bottom", fontsize=8)
     fig.tight_layout()
     fig.savefig(args.output_dir / "model_size.png", dpi=160)
@@ -537,7 +552,7 @@ def plot_reports(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
         ("model_mb", "size_fidelity_tradeoff.png", "model package MB", "Size vs Fidelity"),
     ]:
         fig, ax = plt.subplots(figsize=(8.5, 6.2))
-        for row in rows:
+        for row in chart_rows:
             ax.scatter(getattr(row, x_key), row.rmse, s=max(45, min(320, row.model_mb / 3)), alpha=0.75)
             ax.annotate(row.name.replace("ft_places2-", ""), (getattr(row, x_key), row.rmse), xytext=(5, 5), textcoords="offset points", fontsize=8)
         ax.set_title(title)
@@ -609,12 +624,31 @@ def make_latent_contact_sheet(args: argparse.Namespace, rows: list[RuntimeRow], 
 
 
 def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
+    chart_rows = chart_rows_for(args, rows)
+    chart_names = ", ".join(f"`{row.name}`" for row in chart_rows)
+    omitted_chart_names = ", ".join(f"`{row.name}`" for row in rows if row not in chart_rows)
+    native_onnx_gpu_providers = {
+        "CUDAExecutionProvider",
+        "DmlExecutionProvider",
+        "DirectMLExecutionProvider",
+        "MIGraphXExecutionProvider",
+        "ROCMExecutionProvider",
+        "TensorrtExecutionProvider",
+    }
+    available_onnx_providers = getattr(args, "available_onnx_providers", [])
+    native_onnx_note = (
+        f"- ONNX Runtime providers available in this run: `{', '.join(available_onnx_providers)}`."
+        if available_onnx_providers
+        else "- ONNX Runtime provider availability was not recorded for this report."
+    )
+    if available_onnx_providers and native_onnx_gpu_providers.isdisjoint(available_onnx_providers):
+        native_onnx_note += " No native ONNX GPU provider such as CUDA, DirectML, ROCm, MIGraphX, or TensorRT was available."
     lines = [
         f"# Moebius {args.family} Cross-Runtime Benchmark",
         "",
         f"Reference: first requested PyTorch row. Steps: `{args.steps}`. Seed: `{args.seed}`. Guidance: `{args.guidance}`. Strength: `{args.strength}`.",
         "",
-        "This benchmark compares deterministic latent denoising across PyTorch, ONNX, and MLX. CPU and accelerated PyTorch/ONNX rows are reported separately so performance comparisons can be made between matching device classes. The first requested PyTorch row is used only as the numeric fidelity reference because it is the original implementation; performance comparisons should be read row-by-row by backend/device.",
+        "This benchmark compares deterministic latent denoising across PyTorch, ONNX, and MLX. CPU and slow provider-fallback rows stay in the CSV/table for completeness, but the charts focus on competitive Apple GPU/MLX timings so the useful 12-20 second differences remain visible. The first requested PyTorch row is used only as the numeric fidelity reference because it is the original implementation; performance comparisons should be read row-by-row by backend/device.",
         "",
         "## Results",
         "",
@@ -631,8 +665,11 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
             "## Interpretation",
             "",
             "- Use `PyTorch MPS` versus `MLX` rows for the Apple GPU-backed speed comparison.",
-            "- `PyTorch CPU` and `ONNX CPU` are included as explicit CPU baselines, not as the headline speed comparison.",
-            "- `ONNX CoreML` uses ONNX Runtime's CoreML provider where available. Some graph nodes can still run on CPU, and provider setup is included in `load s`.",
+            "- `PyTorch CPU`, `ONNX CPU`, and very slow provider fallback rows are included in the table and CSV but omitted from the chart images.",
+            f"- Chart rows: {chart_names}.",
+            f"- Rows omitted from charts: {omitted_chart_names or '`none`'}.",
+            native_onnx_note,
+            "- `ONNX CoreML` uses ONNX Runtime's CoreML provider where available. In this run it was slower than CPU because only part of the graph used CoreML and provider setup is included in `load s`.",
             "- Fidelity metrics are measured against the first requested PyTorch row, which is the original implementation path used as a numeric reference.",
             "",
             "## Charts",
@@ -680,6 +717,8 @@ def write_summary(args: argparse.Namespace, rows: list[RuntimeRow]) -> None:
             "- `--vae-dir`: PixelHacker VAE directory containing `config.json` and `diffusion_pytorch_model.bin`.",
             "- `--torch-devices`: comma-separated PyTorch devices, for example `cpu,mps`.",
             "- `--onnx-providers`: comma-separated ONNX Runtime providers, for example `CPUExecutionProvider,CoreMLExecutionProvider`.",
+            "- `--chart-max-total-seconds`: omit very slow rows from chart images while keeping them in CSV/table output.",
+            "- `--chart-include-devices`: optional comma-separated allow-list for chart devices/providers.",
             "- `--onnx-root`: ONNX directory containing `vae_encoder.onnx` and `unet.onnx`.",
             "- `--mlx-model-root`: directory containing MLX variant folders.",
             "",
@@ -704,6 +743,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--torch-device", choices=["cpu", "mps", "auto"], help="Deprecated alias for --torch-devices with one device.")
     parser.add_argument("--onnx-providers", default="CPUExecutionProvider,CoreMLExecutionProvider", help="Comma-separated ONNX Runtime providers.")
     parser.add_argument("--onnx-provider", help="Deprecated alias for --onnx-providers with one provider.")
+    parser.add_argument("--chart-max-total-seconds", type=float, default=60.0, help="Keep slow baseline rows in CSV/table output but omit them from chart images. Default: 60.")
+    parser.add_argument("--chart-include-devices", default="", help="Optional comma-separated chart allow-list for row.device values.")
     parser.add_argument("--mlx-variants", default=",".join(MLX_VARIANTS))
     parser.add_argument("--mlx-model-root", type=Path, default=None)
     parser.add_argument("--mlx-download-base", type=Path)
@@ -721,6 +762,7 @@ def parse_args() -> argparse.Namespace:
     args.download_missing = not args.no_download
     args.torch_devices = parse_list(args.torch_device or args.torch_devices)
     args.onnx_providers = parse_list(args.onnx_provider or args.onnx_providers)
+    args.chart_include_devices = parse_list(args.chart_include_devices)
     args.mlx_variants = parse_list(args.mlx_variants)
     args.pytorch_code_root = args.pytorch_code_root or Path(os.environ.get("MOEBIUS_PYTORCH_CODE_ROOT", args.artifact_dir / "code" / "Moebius"))
     args.pytorch_weights_root = args.pytorch_weights_root or Path(os.environ.get("MOEBIUS_PYTORCH_WEIGHTS_ROOT", args.artifact_dir / "models" / "Moebius"))
@@ -780,6 +822,7 @@ def main() -> None:
     assert reference is not None
     assert reference_masked is not None
 
+    args.available_onnx_providers = require_module("onnxruntime").get_available_providers()
     onnx_providers = available_onnx_providers(args.onnx_providers)
     if not onnx_providers:
         print("No requested ONNX providers are available; skipping ONNX rows.", file=sys.stderr)
@@ -820,6 +863,10 @@ def main() -> None:
                 "strength": args.strength,
                 "torch_devices": torch_devices,
                 "onnx_providers": onnx_providers,
+                "available_onnx_providers": args.available_onnx_providers,
+                "chart_max_total_seconds": args.chart_max_total_seconds,
+                "chart_include_devices": args.chart_include_devices,
+                "chart_rows": [row.name for row in chart_rows_for(args, rows)],
                 "reference": reference_name,
                 "mlx_variants": args.mlx_variants,
             },

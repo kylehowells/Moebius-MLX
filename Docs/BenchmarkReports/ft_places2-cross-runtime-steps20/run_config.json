@@ -22,5 +22,23 @@
     "ft_places2-mxfp4",
     "ft_places2-q4-ff-spatial-vae",
     "ft_places2-q4-all-spatial-vae"
+  ],
+  "chart_max_total_seconds": 60.0,
+  "chart_include_devices": [],
+  "chart_rows": [
+    "PyTorch MPS",
+    "ft_places2-f32",
+    "ft_places2-f16",
+    "ft_places2-q8",
+    "ft_places2-q4",
+    "ft_places2-mxfp8",
+    "ft_places2-mxfp4",
+    "ft_places2-q4-ff-spatial-vae",
+    "ft_places2-q4-all-spatial-vae"
+  ],
+  "available_onnx_providers": [
+    "CoreMLExecutionProvider",
+    "AzureExecutionProvider",
+    "CPUExecutionProvider"
   ]
 }
