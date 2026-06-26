@@ -1,4 +1,10 @@
+# macOS metadata
 .DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
 __pycache__/
 *.profraw
 /.build
