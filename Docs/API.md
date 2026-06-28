@@ -109,6 +109,21 @@ let outputRGB01 = try pipeline.runImageRGBFloats(
 
 `imageNHWC` is `512 * 512 * 3` floats in `[-1, 1]`. `maskNHWC` is `512 * 512` floats where `1` means inpaint. The output is `512 * 512 * 3` floats in `[0, 1]`.
 
+### Image Size Contract
+
+`MoebiusImageInput` intentionally accepts only the released Moebius checkpoint's native working shape:
+
+| Tensor | Shape |
+|---|---|
+| Source image | `[1, 512, 512, 3]` |
+| Mask | `[1, 512, 512, 1]` |
+| Latent | `[1, 64, 64, 4]` |
+| UNet input | `[1 or 2, 64, 64, 9]` |
+
+The fixed square shape comes from the original model configuration and trained lambda cross-attention relative-position tensors. The MLX package implements the released checkpoint behavior; it does not add arbitrary native image sizes or aspect ratios.
+
+If your app accepts non-square images, convert them into the `512 x 512` model workspace first. Common choices are center crop, letterbox, or tiled inpainting. Keep the mask in the same transformed coordinate space, then map the generated square output back into your app's image coordinates.
+
 ## Core Types
 
 `MoebiusModelResolver`

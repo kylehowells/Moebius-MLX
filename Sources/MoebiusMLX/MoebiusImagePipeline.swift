@@ -5,6 +5,10 @@ import MLXRandom
 // MARK: - MoebiusImageInput
 
 /// Image and mask tensors used by the Moebius image pipeline.
+///
+/// The released Moebius checkpoints use a fixed `512 x 512` square image
+/// workspace. Apps that accept other image sizes should crop, letterbox, or tile
+/// before creating this input, then map the square output back afterward.
 public struct MoebiusImageInput {
 	/// Source image tensor shaped `[1, 512, 512, 3]` in NHWC order, normalized to `[-1, 1]`.
 	public var image: MLXArray
@@ -103,9 +107,9 @@ public extension MoebiusPipeline {
 
 /// Tensor constants and conversion helpers for Moebius image generation.
 public enum MoebiusImageTensors {
-	/// Required source image size in pixels.
+	/// Required square source image size in pixels for the released Moebius checkpoints.
 	public static let imageSize: Int = 512
-	/// Latent spatial size used by the UNet and VAE.
+	/// Square latent spatial size used by the UNet and VAE.
 	public static let latentSize: Int = 64
 
 	/// Downsamples a `[1, 512, 512, 1]` image mask into latent-space mask shape `[1, 64, 64, 1]`.

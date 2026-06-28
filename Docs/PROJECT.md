@@ -82,6 +82,10 @@ Moebius uses fixed tensor sizes:
 - UNet input channels: `9` (`noisy latent + mask + masked-image latent`)
 - VAE scaling factor: `0.13025`
 
+This is a released-checkpoint constraint, not just a convenience added by the MLX port. The original PyTorch wrapper can resize input images before inference, but the shipped model config builds the UNet for a `512x512` image and therefore a `64x64` latent. The lambda cross-attention path has learned relative-position tensors tied to the square latent grids used by the trained model (`64x64`, `32x32`, and `16x16`). Non-square latent grids and other native resolutions are outside the supported behavior of these weights.
+
+App or CLI front ends can still accept arbitrary photos by mapping them into the square model workspace with crop, letterbox, or tile preprocessing. That preprocessing must transform the mask consistently and map the result back afterward. It should be documented as wrapper behavior, not as arbitrary-resolution model support.
+
 ## Swift Library Structure
 
 The library is split into focused implementation files:
@@ -261,6 +265,7 @@ Scripts/run_device_autorun.sh --model ft_places2 --compare
 ## Current Limitations
 
 - MLX model execution requires supported Apple hardware. iOS Simulator execution is rejected before MLX initialization.
+- Native model inference is fixed to `512x512` square inputs and outputs for the released checkpoints. Arbitrary photo sizes require crop, letterbox, or tile preprocessing outside the model.
 - Model artifacts are distributed separately from this source repository.
 - Lower-bit variants are measured tradeoffs, not automatic quality-equivalent replacements for f32.
 - The 200 MB q4 candidate reaches the package-size target but has a larger measured fidelity drop.

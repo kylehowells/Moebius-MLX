@@ -97,6 +97,14 @@ let outputRGB01 = try pipeline.runImageRGBFloats(
 
 `imageFloats` must be `[1, 512, 512, 3]` RGB in NHWC order normalized to `[-1, 1]`. `maskFloats` must be `[1, 512, 512, 1]`, where `1` marks the region to inpaint. `runImageRGBFloats` returns `[1, 512, 512, 3]` RGB values clamped to `[0, 1]`.
 
+## Resolution And Aspect Ratio
+
+The released Moebius checkpoints are native `512 x 512` square inpainting models. This is a model/checkpoint constraint, not just a wrapper choice in this Swift port.
+
+The original PyTorch inference code includes a resize helper that can resize arbitrary input images before inference, but the trained UNet itself is built from the `512` image-size config. After the VAE's 8x downsampling, that gives a `64 x 64` latent grid. Moebius' lambda cross-attention path uses learned relative-position tensors tied to the trained square latent grids (`64 x 64`, `32 x 32`, and `16 x 16`), so arbitrary native resolutions and non-square latent grids are not supported by the released weights.
+
+Apps may still accept portrait or landscape images, but they must preprocess them into the `512 x 512` model workspace by cropping, letterboxing, or tiling, then map the generated result back into the app image. That is app-level image handling, not true arbitrary-aspect-ratio model inference.
+
 ## Model Loading
 
 `MoebiusModel.fromPretrained(_:)` accepts:

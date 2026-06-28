@@ -16,6 +16,12 @@ UIKit demo app for running Moebius-MLX on Mac Catalyst and iPadOS.
 
 The main UI is intentionally image-first: source and mask editing are on the left, result display is on the right, and advanced controls live in the side inspector. On narrow devices, the inspector is presented as a slide-over panel behind a dimming overlay.
 
+## Image Size Behavior
+
+The released Moebius checkpoints run natively on a `512 x 512` square image and mask. The demo can import arbitrary portrait or landscape images, but it maps them into that square model workspace before generation and keeps the editable mask in the same coordinate space.
+
+This is app-level preprocessing around the model, not arbitrary-resolution model inference. The generated result is produced from the square working image, then displayed back in the demo UI.
+
 ## Build
 
 From the repository root:
