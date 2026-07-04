@@ -591,6 +591,18 @@ public final class MoebiusUNet: Module {
 	}
 
 	func callAsFunction(latent: MLXArray, timesteps: MLXArray, conditioning: MoebiusUNetConditioning) -> MLXArray {
+		let dtype: DType = latent.dtype
+		let timeEmbedding: MLXArray = self.prepareTimeEmbedding(timesteps: timesteps, dtype: dtype)
+		return self(latent: latent, timeEmbedding: timeEmbedding, conditioning: conditioning)
+	}
+
+	func prepareTimeEmbedding(timesteps: MLXArray, dtype: DType) -> MLXArray {
+		var timeEmbedding: MLXArray = moebiusTimestepEmbedding(timesteps, dimensions: 320, dtype: dtype)
+		timeEmbedding = self.timeEmbedding(timeEmbedding)
+		return timeEmbedding
+	}
+
+	func callAsFunction(latent: MLXArray, timeEmbedding: MLXArray, conditioning: MoebiusUNetConditioning) -> MLXArray {
 		let trace: Bool = ProcessInfo.processInfo.environment["MOEBIUS_MLX_TRACE"] == "1"
 		func traceEval(_ label: String, _ value: MLXArray) {
 			guard trace else { return }
@@ -598,9 +610,6 @@ public final class MoebiusUNet: Module {
 			FileHandle.standardError.write(Data("[unet] \(label): \(value.shape)\n".utf8))
 			eval(value)
 		}
-		let dtype: DType = latent.dtype
-		var timeEmbedding: MLXArray = moebiusTimestepEmbedding(timesteps, dimensions: 320, dtype: dtype)
-		timeEmbedding = self.timeEmbedding(timeEmbedding)
 		traceEval("timeEmbedding", timeEmbedding)
 
 		let hiddenStates: MLXArray = conditioning.hiddenStates

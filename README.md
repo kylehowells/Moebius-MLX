@@ -202,21 +202,22 @@ Add `--internal-trace` to `memory-profile` when you need detailed VAE/conv `mlx-
 
 For tighter memory budgets, serial classifier-free guidance can be enabled with `MOEBIUS_MLX_SERIAL_CFG=1`. It reduces the denoising peak but is a fallback mode because multi-step output is very slightly different from the batched default.
 
-In low-memory mode, quantized spatial convolutions are computed in row chunks. The runtime default is `128` output rows for batched CFG and `64` rows for serial CFG. Set `MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS` to override this when profiling a specific device.
+In low-memory mode, quantized spatial convolutions are computed in row chunks. The runtime default is `128` output rows for batched CFG and `64` rows for serial CFG. Set `MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS` to override this when profiling a specific device. The denoising loop also precomputes each deterministic timestep embedding once per step and reuses it across CFG branches, which improves inference time without changing the fixed-input output.
 
 Current `ft_places2` low-memory profile highlights from release CLI runs on Apple Silicon macOS, `steps=8`, fixed synthetic input:
 
 | Variant | CFG mode | Denoise peak | Decode peak | Inference |
 |---|---|---:|---:|---:|
-| `ft_places2-f16` | Batched | 3644 MB | 2656 MB | 7.83 s |
-| `ft_places2-f16` | Serial | 2334 MB | 2656 MB | 5.78 s |
-| `ft_places2-mxfp8` | Batched | 6646 MB | 2636 MB | 9.62 s |
-| `ft_places2-q4` | Batched | 3501 MB | 2512 MB | 5.83 s |
-| `ft_places2-q4` | Serial | 2190 MB | 2512 MB | 5.59 s |
-| `ft_places2-q4-ff-spatial-vae` | Batched | 3349 MB | 2123 MB | 7.25 s |
-| `ft_places2-q4-ff-spatial-vae` | Serial | 2038 MB | 1804 MB | 7.41 s |
-| `ft_places2-q4-all-spatial-vae` | Batched | 3228 MB | 2002 MB | 8.69 s |
-| `ft_places2-q4-all-spatial-vae` | Serial | 1917 MB | 1684 MB | 7.79 s |
+| `ft_places2-f16` | Batched | 3644 MB | 2656 MB | 5.34 s |
+| `ft_places2-f16` | Serial | 2334 MB | 2656 MB | 5.50 s |
+| `ft_places2-mxfp8` | Batched | 6646 MB | 2636 MB | 8.93 s |
+| `ft_places2-mxfp8` | Serial | 4025 MB | 2636 MB | 9.11 s |
+| `ft_places2-q4` | Batched | 3501 MB | 2512 MB | 5.36 s |
+| `ft_places2-q4` | Serial | 2190 MB | 2512 MB | 5.38 s |
+| `ft_places2-q4-ff-spatial-vae` | Batched | 3349 MB | 2123 MB | 6.98 s |
+| `ft_places2-q4-ff-spatial-vae` | Serial | 2038 MB | 1804 MB | 7.07 s |
+| `ft_places2-q4-all-spatial-vae` | Batched | 3228 MB | 2002 MB | 6.91 s |
+| `ft_places2-q4-all-spatial-vae` | Serial | 1917 MB | 1684 MB | 8.03 s |
 
 The 322 MB `ft_places2-q4-ff-spatial-vae` package has completed on an `iPad13,11` device. The 200 MB `ft_places2-q4-all-spatial-vae` package is the smallest and lowest-memory candidate, but should still be tested on each target iPhone/iPad class.
 

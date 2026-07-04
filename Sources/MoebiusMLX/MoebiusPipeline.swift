@@ -64,6 +64,15 @@ public final class MoebiusPipeline: @unchecked Sendable {
 			eval(conditioning!.arrays)
 		}
 
+		let dtype: DType = self.model.manifest.precision.dtype
+		let timestepEmbeddings: [MLXArray] = timesteps.map { timestep in
+			let timestepArray: MLXArray = MoebiusRuntime.usesSerialClassifierFreeGuidance
+				? .init([timestep])
+				: .init([timestep, timestep])
+			return self.model.unet.prepareTimeEmbedding(timesteps: timestepArray, dtype: dtype)
+		}
+		eval(timestepEmbeddings)
+
 		for (index, timestep) in timesteps.enumerated() {
 			let previous: Int = index + 1 < timesteps.count ? timesteps[index + 1] : -1
 			progress?(MoebiusProgress(stage: "Denoising", step: index + 1, total: timesteps.count))
@@ -73,6 +82,7 @@ public final class MoebiusPipeline: @unchecked Sendable {
 				maskedLatents: maskedLatents,
 				timestep: timestep,
 				guidanceScale: options.guidanceScale,
+				timeEmbedding: timestepEmbeddings[index],
 				conditioning: conditioning,
 				serialConditioning: serialConditioning
 			)
@@ -117,6 +127,7 @@ public final class MoebiusPipeline: @unchecked Sendable {
 		maskedLatents: MLXArray,
 		timestep: Int,
 		guidanceScale: Float,
+		timeEmbedding: MLXArray? = nil,
 		conditioning: MoebiusUNetConditioning?,
 		serialConditioning: (first: MoebiusUNetConditioning, second: MoebiusUNetConditioning)? = nil
 	) throws -> MLXArray {
@@ -140,10 +151,11 @@ public final class MoebiusPipeline: @unchecked Sendable {
 			}
 
 			let timestepArray: MLXArray = .init([timestep])
-			let firstNoise: MLXArray = self.model.unet(latent: input, timesteps: timestepArray, conditioning: firstConditioning)
+			let resolvedTimeEmbedding: MLXArray = timeEmbedding ?? self.model.unet.prepareTimeEmbedding(timesteps: timestepArray, dtype: dtype)
+			let firstNoise: MLXArray = self.model.unet(latent: input, timeEmbedding: resolvedTimeEmbedding, conditioning: firstConditioning)
 			eval(firstNoise)
 			MoebiusRuntime.clearTransientCache()
-			let secondNoise: MLXArray = self.model.unet(latent: input, timesteps: timestepArray, conditioning: secondConditioning)
+			let secondNoise: MLXArray = self.model.unet(latent: input, timeEmbedding: resolvedTimeEmbedding, conditioning: secondConditioning)
 			return firstNoise + MLXArray(guidanceScale).asType(dtype) * (secondNoise - firstNoise)
 		}
 
@@ -151,7 +163,12 @@ public final class MoebiusPipeline: @unchecked Sendable {
 		let timesteps: MLXArray = .init([timestep, timestep])
 		let noise: MLXArray
 		if let conditioning {
-			noise = self.model.unet(latent: batchedInput, timesteps: timesteps, conditioning: conditioning)
+			if let timeEmbedding {
+				noise = self.model.unet(latent: batchedInput, timeEmbedding: timeEmbedding, conditioning: conditioning)
+			}
+			else {
+				noise = self.model.unet(latent: batchedInput, timesteps: timesteps, conditioning: conditioning)
+			}
 		}
 		else {
 			let inputIDs: MLXArray = .init(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
