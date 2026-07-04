@@ -198,6 +198,8 @@ swift run moebius-mlx memory-profile ft_places2-q4-all-spatial-vae \
   --reset-peak-at-stages
 ```
 
+Add `--internal-trace` to `memory-profile` when you need detailed VAE/conv `mlx-trace` rows instead of just stage-level memory.
+
 For tighter memory budgets, serial classifier-free guidance can be enabled with `MOEBIUS_MLX_SERIAL_CFG=1`. It reduces the denoising peak but is a fallback mode because multi-step output is very slightly different from the batched default.
 
 In low-memory mode, quantized spatial convolutions are computed in row chunks. The runtime default is `128` output rows for batched CFG and `64` rows for serial CFG. Set `MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS` to override this when profiling a specific device.

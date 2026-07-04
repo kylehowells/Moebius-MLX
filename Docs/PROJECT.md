@@ -197,7 +197,7 @@ The same fixed-input quality guardrail for `ft_places2-q4-all-spatial-vae`:
 
 Serial CFG is therefore an emergency memory mode, not the default. It makes lower-memory devices more plausible, but the default remains batched CFG because it is faster and preserves the reference output exactly in the fixed-input quality check.
 
-Internal memory trace lines are disabled during normal app inference. The `memory-profile` command enables `MOEBIUS_MLX_MEMORY_TRACE=1` so detailed `mlx-trace` rows are available during profiling. Some first-run Metal shader compilation warnings still come from MLX itself; they are noisy but did not prevent the real-device run above from completing.
+Internal memory trace lines are disabled during normal app inference. The `memory-profile` command reports stage-level memory by default; pass `--internal-trace` to enable `MOEBIUS_MLX_MEMORY_TRACE=1` and print detailed VAE/conv `mlx-trace` rows. Some first-run Metal shader compilation warnings still come from MLX itself; they are noisy but did not prevent the real-device run above from completing.
 
 Current benchmark interpretation:
 

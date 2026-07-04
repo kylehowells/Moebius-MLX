@@ -538,6 +538,9 @@ struct MemoryProfile: ParsableCommand {
 	@Flag(help: "Force the iOS-style low-memory path on macOS.")
 	var lowMemory: Bool = false
 
+	@Flag(help: "Enable detailed internal VAE/conv memory trace lines.")
+	var internalTrace: Bool = false
+
 	@Flag(help: "Reset MLX peak tracking after load and before decode to isolate stage peaks.")
 	var resetPeakAtStages: Bool = false
 
@@ -547,6 +550,8 @@ struct MemoryProfile: ParsableCommand {
 	func run() throws {
 		if self.lowMemory {
 			setenv("MOEBIUS_MLX_LOW_MEMORY", "1", 1)
+		}
+		if self.internalTrace {
 			setenv("MOEBIUS_MLX_MEMORY_TRACE", "1", 1)
 		}
 		if let cacheLimitMB {

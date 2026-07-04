@@ -532,6 +532,10 @@ public enum MoebiusRuntime {
 			return
 		}
 
+		guard self.internalMemoryBarriersEnabled || self.memoryTraceEnabled else {
+			return
+		}
+
 		if let array {
 			eval(array)
 		}
@@ -540,6 +544,10 @@ public enum MoebiusRuntime {
 			FileHandle.standardError.write(Data("\(line)\n".utf8))
 		}
 		self.clearTransientCache()
+	}
+
+	private static var internalMemoryBarriersEnabled: Bool {
+		return self.environmentBoolean("MOEBIUS_MLX_INTERNAL_MEMORY_BARRIERS", defaultValue: true)
 	}
 
 	private static var lowMemoryDiagnosticsEnabled: Bool {

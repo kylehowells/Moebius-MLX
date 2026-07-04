@@ -219,6 +219,8 @@ MOEBIUS_MLX_SERIAL_CFG=1 swift run moebius-mlx memory-profile ft_places2-q4-all-
 
 When `--spatial-conv-chunk-rows` is omitted, the runtime uses the mobile default: `128` rows for batched classifier-free guidance and `64` rows for serial CFG. Use the option or `MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS` to sweep a specific device.
 
+Add `--internal-trace` to `memory-profile` to print detailed VAE/conv `mlx-trace` rows. Without it, the command reports stage-level memory only, which better matches normal app inference.
+
 swift run moebius-mlx compare-image ft_places2 --steps 2
 
 swift run moebius-mlx benchmark-image ft_places2-q4 \
