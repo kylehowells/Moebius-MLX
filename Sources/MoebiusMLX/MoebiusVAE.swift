@@ -54,12 +54,48 @@ final class MoebiusVAEAttention: Module, MoebiusUnaryLayer {
 		let values: MLXArray = self.valueProjection(y).reshaped(b, h * w, c)
 
 		let scale: Float = 1.0 / sqrt(Float(queries.dim(-1)))
-		let scores: MLXArray = (queries * scale).matmul(keys.transposed(0, 2, 1))
-		let attention: MLXArray = softmax(scores, axis: -1)
-
-		y = matmul(attention, values).reshaped(b, h, w, c)
+		if MoebiusRuntime.usesChunkedVAEAttention {
+			y = self.chunkedAttention(queries: queries, keys: keys, values: values, scale: scale)
+				.reshaped(b, h, w, c)
+		}
+		else {
+			y = MLXFast.scaledDotProductAttention(
+				queries: queries.expandedDimensions(axis: 1),
+				keys: keys.expandedDimensions(axis: 1),
+				values: values.expandedDimensions(axis: 1),
+				scale: scale,
+				mask: MLXFast.ScaledDotProductAttentionMaskMode.none
+			)
+			.squeezed(axis: 1)
+			.reshaped(b, h, w, c)
+		}
 		y = self.outProjection(y)
 		return x + y
+	}
+
+	private func chunkedAttention(queries: MLXArray, keys: MLXArray, values: MLXArray, scale: Float) -> MLXArray {
+		let tokenCount: Int = queries.dim(1)
+		let chunkSize: Int = min(MoebiusRuntime.vaeAttentionChunkSize, tokenCount)
+		let transposedKeys: MLXArray = keys.transposed(0, 2, 1)
+		let output: MLXArray = .zeros(queries.shape, dtype: queries.dtype)
+
+		var start: Int = 0
+		while start < tokenCount {
+			let end: Int = min(start + chunkSize, tokenCount)
+			let chunkQueries: MLXArray = queries[0..., start ..< end, 0...]
+			let scores: MLXArray = (chunkQueries * scale).matmul(transposedKeys)
+			let attention: MLXArray = softmax(scores, axis: -1)
+			let chunk: MLXArray = matmul(attention, values)
+			eval(chunk)
+			output[0..., start ..< end, 0...] = chunk
+			eval(output)
+			MoebiusRuntime.clearTransientCache()
+			start = end
+		}
+
+		eval(output)
+		MoebiusRuntime.clearTransientCache()
+		return output
 	}
 }
 
@@ -87,9 +123,11 @@ final class MoebiusResnetBlock2D: Module, MoebiusUnaryLayer {
 		var y: MLXArray = self.norm1(x)
 		y = silu(y)
 		y = self.conv1(y)
+		MoebiusRuntime.traceMemory("vae-resnet after conv1", evaluate: y)
 		y = self.norm2(y)
 		y = silu(y)
 		y = self.conv2(y)
+		MoebiusRuntime.traceMemory("vae-resnet after conv2", evaluate: y)
 		if let convolutionShortcut {
 			return y + convolutionShortcut(x)
 		}
@@ -129,15 +167,20 @@ final class MoebiusEncoderDecoderBlock2D: Module, MoebiusUnaryLayer {
 
 	func callAsFunction(_ x: MLXArray) -> MLXArray {
 		var y: MLXArray = x
-		for resnet in self.resnets {
+		for (index, resnet) in self.resnets.enumerated() {
 			y = resnet(y)
+			MoebiusRuntime.traceMemory("vae-block after resnet \(index)", evaluate: y)
 		}
 		if let downsample {
 			y = padded(y, widths: [[0, 0], [0, 1], [0, 1], [0, 0]])
 			y = downsample(y)
+			MoebiusRuntime.traceMemory("vae-block after downsample", evaluate: y)
 		}
 		if let upsample {
-			y = upsample(moebiusUpsampleNearest(y))
+			y = moebiusUpsampleNearest(y)
+			MoebiusRuntime.traceMemory("vae-block after nearest upsample", evaluate: y)
+			y = upsample(y)
+			MoebiusRuntime.traceMemory("vae-block after upsample conv", evaluate: y)
 		}
 		return y
 	}
@@ -225,16 +268,24 @@ final class MoebiusVADecoder: Module, MoebiusUnaryLayer {
 	}
 
 	func callAsFunction(_ x: MLXArray) -> MLXArray {
+		MoebiusRuntime.traceMemory("vae-decoder before conv_in")
 		var y: MLXArray = self.convIn(x)
+		MoebiusRuntime.traceMemory("vae-decoder after conv_in", evaluate: y)
 		y = self.midBlocks.0(y)
+		MoebiusRuntime.traceMemory("vae-decoder after mid resnet 0", evaluate: y)
 		y = self.midBlocks.1(y)
+		MoebiusRuntime.traceMemory("vae-decoder after mid attention", evaluate: y)
 		y = self.midBlocks.2(y)
-		for block in self.upBlocks {
+		MoebiusRuntime.traceMemory("vae-decoder after mid resnet 1", evaluate: y)
+		for (index, block) in self.upBlocks.enumerated() {
 			y = block(y)
+			MoebiusRuntime.traceMemory("vae-decoder after up block \(index)", evaluate: y)
 		}
 		y = self.convNormOut(y)
+		MoebiusRuntime.traceMemory("vae-decoder after norm_out", evaluate: y)
 		y = silu(y)
 		y = self.convOut(y)
+		MoebiusRuntime.traceMemory("vae-decoder after conv_out", evaluate: y)
 		return y
 	}
 }

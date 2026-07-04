@@ -140,6 +140,76 @@ public final class MoebiusQuantizedPointwiseConv2d: Module, UnaryLayer, Quantize
 		let paddedWidth: Int = input.dim(2)
 		let outputHeight: Int = (paddedHeight - self.dilation.0 * (self.kernelHeight - 1) - 1) / self.stride.0 + 1
 		let outputWidth: Int = (paddedWidth - self.dilation.1 * (self.kernelWidth - 1) - 1) / self.stride.1 + 1
+
+		if self.shouldUseChunkedSpatialConvolution(outputHeight: outputHeight) {
+			return self.chunkedSpatialConvolution(
+				input: input,
+				batch: batch,
+				outputHeight: outputHeight,
+				outputWidth: outputWidth
+			)
+		}
+
+		return self.convolve(
+			input: input,
+			batch: batch,
+			outputHeight: outputHeight,
+			outputWidth: outputWidth
+		)
+	}
+
+	private func shouldUseChunkedSpatialConvolution(outputHeight: Int) -> Bool {
+		guard MoebiusRuntime.aggressivelyClearsTransientCaches else {
+			return false
+		}
+
+		guard self.kernelHeight > 1 || self.kernelWidth > 1 else {
+			return false
+		}
+
+		return outputHeight > MoebiusRuntime.spatialConvolutionChunkRows
+	}
+
+	private func chunkedSpatialConvolution(
+		input: MLXArray,
+		batch: Int,
+		outputHeight: Int,
+		outputWidth: Int
+	) -> MLXArray {
+		let chunkRows: Int = MoebiusRuntime.spatialConvolutionChunkRows
+		var chunks: [MLXArray] = []
+		chunks.reserveCapacity((outputHeight + chunkRows - 1) / chunkRows)
+
+		var start: Int = 0
+		while start < outputHeight {
+			let end: Int = min(start + chunkRows, outputHeight)
+			let inputStart: Int = start * self.stride.0
+			let inputEnd: Int = ((end - 1) * self.stride.0) + self.dilation.0 * (self.kernelHeight - 1) + 1
+			let inputChunk: MLXArray = input[0..., inputStart ..< inputEnd, 0..., 0...]
+			let outputChunk: MLXArray = self.convolve(
+				input: inputChunk,
+				batch: batch,
+				outputHeight: end - start,
+				outputWidth: outputWidth
+			)
+			eval(outputChunk)
+			MoebiusRuntime.clearTransientCache()
+			chunks.append(outputChunk)
+			start = end
+		}
+
+		let y: MLXArray = concatenated(chunks, axis: 1)
+		eval(y)
+		MoebiusRuntime.clearTransientCache()
+		return y
+	}
+
+	private func convolve(
+		input: MLXArray,
+		batch: Int,
+		outputHeight: Int,
+		outputWidth: Int
+	) -> MLXArray {
 		let inputStrides: [Int] = input.strides
 		let patches: MLXArray = asStrided(
 			input,

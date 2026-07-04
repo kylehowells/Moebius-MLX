@@ -1,5 +1,6 @@
 import ArgumentParser
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 import MLX
@@ -13,7 +14,7 @@ struct MoebiusCLI: AsyncParsableCommand {
 	static let configuration: CommandConfiguration = .init(
 		commandName: "moebius-mlx",
 		abstract: "Run and inspect Moebius MLX image inpainting models.",
-		subcommands: [Inspect.self, DownloadModel.self, ExportQuantized.self, VAESmoke.self, UNetSmoke.self, ImageSmoke.self, GenerateImage.self, CompareImage.self, BenchmarkImage.self, BenchmarkFixture.self, UNetDebug.self, VerifyFixture.self]
+		subcommands: [Inspect.self, DownloadModel.self, ExportQuantized.self, VAESmoke.self, UNetSmoke.self, ImageSmoke.self, GenerateImage.self, MemoryProfile.self, QualityCheck.self, CompareImage.self, BenchmarkImage.self, BenchmarkFixture.self, UNetDebug.self, VerifyFixture.self]
 	)
 }
 
@@ -67,7 +68,7 @@ struct Inspect: ParsableCommand {
 
 	func run() throws {
 		let directory: URL = try self.resolveModelDirectory()
-		let model: MoebiusModel = try MoebiusModel.load(from: directory)
+		let model: MoebiusModel = try MoebiusModel.load(from: directory, retainLoadedWeights: true)
 		print("name: \(model.manifest.modelName)")
 		print("precision: \(model.manifest.precision.rawValue)")
 		print("source: \(model.manifest.sourceCheckpoint)")
@@ -499,6 +500,391 @@ struct GenerateImage: ParsableCommand {
 			return local
 		}
 		return try MoebiusModelResolver.resolve(name: model)
+	}
+}
+
+// MARK: - MemoryProfile
+
+struct MemoryProfile: ParsableCommand {
+	static let configuration: CommandConfiguration = .init(abstract: "Run one image pipeline pass while logging process RSS and MLX memory at each stage.")
+
+	@Argument(help: "Converted model variant name or directory.")
+	var model: String
+
+	@Option(help: "Optional real RGB image path. When supplied, --mask is required.")
+	var image: String?
+
+	@Option(help: "Optional real mask image path. White pixels are inpainted. Requires --image.")
+	var mask: String?
+
+	@Option(help: "Deterministic synthetic sample when --image/--mask are omitted.")
+	var sample: String = "gradient-circle"
+
+	@Option(help: "Denoising steps.")
+	var steps: Int = 8
+
+	@Option(help: "Random seed for the initial latent noise.")
+	var seed: UInt64 = 7
+
+	@Option(help: "MLX cache limit in MB while profiling.")
+	var cacheLimitMB: Int?
+
+	@Option(help: "VAE attention query chunk size used in low-memory mode.")
+	var vaeAttentionChunk: Int = 256
+
+	@Option(help: "Output rows per quantized spatial convolution chunk in low-memory mode.")
+	var spatialConvChunkRows: Int = 32
+
+	@Flag(help: "Force the iOS-style low-memory path on macOS.")
+	var lowMemory: Bool = false
+
+	@Flag(help: "Reset MLX peak tracking after load and before decode to isolate stage peaks.")
+	var resetPeakAtStages: Bool = false
+
+	@Option(help: "Optional output PNG path.")
+	var output: String?
+
+	func run() throws {
+		if self.lowMemory {
+			setenv("MOEBIUS_MLX_LOW_MEMORY", "1", 1)
+			setenv("MOEBIUS_MLX_MEMORY_TRACE", "1", 1)
+		}
+		if let cacheLimitMB {
+			setenv("MOEBIUS_MLX_CACHE_LIMIT_MB", String(cacheLimitMB), 1)
+		}
+		setenv("MOEBIUS_MLX_VAE_ATTENTION_CHUNK", String(self.vaeAttentionChunk), 1)
+		setenv("MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS", String(self.spatialConvChunkRows), 1)
+
+		let sample: SyntheticImageSample = try self.loadSample()
+		let directory: URL = try Self.resolveModelDirectory(self.model)
+
+		Self.printMemory("start")
+		let loadStartedAt: Date = .init()
+		let loaded: MoebiusModel = try MoebiusModel.load(from: directory) { message in
+			Self.printMemory("load: \(message)")
+		}
+		let loadDuration: TimeInterval = Date().timeIntervalSince(loadStartedAt)
+		Self.printMemory("loaded")
+		if self.resetPeakAtStages {
+			Memory.peakMemory = 0
+			Self.printMemory("peak reset after load")
+		}
+
+		let pipeline: MoebiusPipeline = .init(model: loaded)
+		let input: MoebiusImageInput = .init(imageNHWC: sample.image, maskNHWC: sample.mask)
+		let options: MoebiusGenerationOptions = .init(
+			steps: self.steps,
+			guidanceScale: 2,
+			seed: self.seed,
+			strength: 0.99,
+			pasteBack: true
+		)
+
+		let inferenceStartedAt: Date = .init()
+		let values: [Float] = try pipeline.runImageRGBFloats(input: input, options: options) { progress in
+			if self.resetPeakAtStages, progress.stage == "Decoding" {
+				Memory.peakMemory = 0
+			}
+			if let step = progress.step, let total = progress.total {
+				Self.printMemory("\(progress.stage) \(step)/\(total)")
+			}
+			else {
+				Self.printMemory(progress.stage)
+			}
+		}
+		let inferenceDuration: TimeInterval = Date().timeIntervalSince(inferenceStartedAt)
+		Self.printMemory("finished")
+
+		if let output {
+			let outputURL: URL = .init(fileURLWithPath: output)
+			try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+			try writeRGBPNG(values: values, url: outputURL)
+			print("output: \(outputURL.path)")
+		}
+
+		let stats: TensorStats = .init(values: values)
+		print("model: \(loaded.manifest.modelName)-\(loaded.manifest.precision.rawValue)")
+		print("steps: \(self.steps)")
+		print("seed: \(self.seed)")
+		print("low_memory: \(MoebiusRuntime.aggressivelyClearsTransientCaches)")
+		print("cache_limit_mb: \(self.cacheLimitMB.map(String.init) ?? "-")")
+		print("serial_cfg: \(MoebiusRuntime.usesSerialClassifierFreeGuidance)")
+		print("vae_attention_chunk: \(MoebiusRuntime.vaeAttentionChunkSize)")
+		print("spatial_conv_chunk_rows: \(MoebiusRuntime.spatialConvolutionChunkRows)")
+		print("load_seconds: \(String(format: "%.3f", loadDuration))")
+		print("inference_seconds: \(String(format: "%.3f", inferenceDuration))")
+		print("image_min: \(stats.min)")
+		print("image_max: \(stats.max)")
+		print("image_mean: \(stats.mean)")
+	}
+
+	private func loadSample() throws -> SyntheticImageSample {
+		if self.image != nil || self.mask != nil {
+			guard let image, let mask else {
+				throw ValidationError("--image and --mask must be supplied together.")
+			}
+
+			return try ImageFileSampleLoader.load(imagePath: image, maskPath: mask)
+		}
+		return try SyntheticImageSample.make(named: self.sample)
+	}
+
+	private static func resolveModelDirectory(_ model: String) throws -> URL {
+		let local: URL = .init(fileURLWithPath: model, isDirectory: true)
+		if FileManager.default.fileExists(atPath: local.path) {
+			return local
+		}
+		return try MoebiusModelResolver.resolve(name: model)
+	}
+
+	private static func printMemory(_ stage: String) {
+		let rss: String = Self.residentMemoryMB().map { String(format: "%.0f", $0) } ?? "-"
+		print("memory\t\(stage)\trss_mb=\(rss)\t\(MoebiusRuntime.memoryDebugSummary())")
+	}
+
+	private static func residentMemoryMB() -> Double? {
+		var info: mach_task_basic_info = .init()
+		var count: mach_msg_type_number_t = .init(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+		let result: kern_return_t = withUnsafeMutablePointer(to: &info) { pointer in
+			pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+				return task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), reboundPointer, &count)
+			}
+		}
+		guard result == KERN_SUCCESS else {
+			return nil
+		}
+
+		return Double(info.resident_size) / 1_000_000
+	}
+}
+
+// MARK: - QualityCheck
+
+struct QualityCheck: ParsableCommand {
+	static let configuration: CommandConfiguration = .init(abstract: "Compare normal and low-memory image pipeline outputs for the same model/input.")
+
+	@Argument(help: "Converted model variant name or directory.")
+	var model: String
+
+	@Option(help: "Optional real RGB image path. When supplied, --mask is required.")
+	var image: String?
+
+	@Option(help: "Optional real mask image path. White pixels are inpainted. Requires --image.")
+	var mask: String?
+
+	@Option(help: "Deterministic synthetic sample when --image/--mask are omitted.")
+	var sample: String = "gradient-circle"
+
+	@Option(help: "Denoising steps.")
+	var steps: Int = 8
+
+	@Option(help: "Random seed for the initial latent noise.")
+	var seed: UInt64 = 7
+
+	@Option(help: "MLX cache limit in MB for the low-memory candidate.")
+	var cacheLimitMB: Int = 20
+
+	@Option(help: "VAE attention query chunk size used in low-memory mode.")
+	var vaeAttentionChunk: Int = 32
+
+	@Option(help: "Output rows per quantized spatial convolution chunk in low-memory mode.")
+	var spatialConvChunkRows: Int = 32
+
+	@Flag(help: "Use serial classifier-free guidance in the low-memory candidate. Saves memory but may change multi-step output slightly.")
+	var serialCFG: Bool = false
+
+	@Option(help: "Maximum allowed absolute RGB error.")
+	var maxAbsTolerance: Float = 0
+
+	@Option(help: "Maximum allowed mean absolute RGB error.")
+	var meanAbsTolerance: Float = 0
+
+	@Option(help: "Optional directory where baseline and candidate PNG outputs are written.")
+	var outputDir: String?
+
+	func run() throws {
+		let sample: SyntheticImageSample = try self.loadSample()
+		let directory: URL = try Self.resolveModelDirectory(self.model)
+
+		let baseline: TimedImageResult = try Self.runOnce(
+			directory: directory,
+			sample: sample,
+			options: self.options,
+			lowMemory: false,
+			cacheLimitMB: nil,
+			serialCFG: false,
+			vaeAttentionChunk: nil,
+			spatialConvChunkRows: nil
+		)
+		let candidate: TimedImageResult = try Self.runOnce(
+			directory: directory,
+			sample: sample,
+			options: self.options,
+			lowMemory: true,
+			cacheLimitMB: self.cacheLimitMB,
+			serialCFG: self.serialCFG,
+			vaeAttentionChunk: self.vaeAttentionChunk,
+			spatialConvChunkRows: self.spatialConvChunkRows
+		)
+
+		let diff: TensorDiff = .init(values: candidate.values, reference: baseline.values)
+		let passed: Bool = diff.maxAbs <= self.maxAbsTolerance && diff.meanAbs <= self.meanAbsTolerance
+		print("model: \(self.model)")
+		print("steps: \(self.steps)")
+		print("seed: \(self.seed)")
+		print("sample: \(self.sampleName)")
+		print("baseline_seconds: \(String(format: "%.3f", baseline.seconds))")
+		print("candidate_seconds: \(String(format: "%.3f", candidate.seconds))")
+		print("speed_ratio_candidate_vs_baseline: \(String(format: "%.3f", candidate.seconds / baseline.seconds))")
+		print("candidate_low_memory: true")
+		print("cache_limit_mb: \(self.cacheLimitMB)")
+		print("serial_cfg: \(self.serialCFG)")
+		print("vae_attention_chunk: \(self.vaeAttentionChunk)")
+		print("spatial_conv_chunk_rows: \(self.spatialConvChunkRows)")
+		print("max_abs: \(diff.maxAbs)")
+		print("mean_abs: \(diff.meanAbs)")
+		print("rmse: \(diff.rmse)")
+		print("p99_abs: \(diff.p99Abs)")
+		print("psnr_db: \(String(format: "%.3f", diff.psnrDB))")
+		print("cosine_similarity: \(String(format: "%.8f", diff.cosineSimilarity))")
+		print("passed: \(passed)")
+
+		if let outputDir {
+			let outputURL: URL = .init(fileURLWithPath: outputDir, isDirectory: true)
+			try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+			try writeRGBPNG(values: baseline.values, url: outputURL.appendingPathComponent("baseline-normal.png"))
+			try writeRGBPNG(values: candidate.values, url: outputURL.appendingPathComponent("candidate-low-memory.png"))
+			print("output_dir: \(outputURL.path)")
+		}
+
+		if passed == false {
+			throw ValidationError("Quality check failed: max_abs=\(diff.maxAbs) tolerance=\(self.maxAbsTolerance), mean_abs=\(diff.meanAbs) tolerance=\(self.meanAbsTolerance).")
+		}
+	}
+
+	private var options: MoebiusGenerationOptions {
+		.init(
+			steps: self.steps,
+			guidanceScale: 2,
+			seed: self.seed,
+			strength: 0.99,
+			pasteBack: true
+		)
+	}
+
+	private var sampleName: String {
+		if let image {
+			return URL(fileURLWithPath: image).deletingPathExtension().lastPathComponent
+		}
+		return self.sample
+	}
+
+	private func loadSample() throws -> SyntheticImageSample {
+		if self.image != nil || self.mask != nil {
+			guard let image, let mask else {
+				throw ValidationError("--image and --mask must be supplied together.")
+			}
+
+			return try ImageFileSampleLoader.load(imagePath: image, maskPath: mask)
+		}
+		return try SyntheticImageSample.make(named: self.sample)
+	}
+
+	private static func runOnce(
+		directory: URL,
+		sample: SyntheticImageSample,
+		options: MoebiusGenerationOptions,
+		lowMemory: Bool,
+		cacheLimitMB: Int?,
+		serialCFG: Bool?,
+		vaeAttentionChunk: Int?,
+		spatialConvChunkRows: Int?
+	) throws -> TimedImageResult {
+		try Self.withLowMemoryEnvironment(
+			enabled: lowMemory,
+			cacheLimitMB: cacheLimitMB,
+			serialCFG: serialCFG,
+			vaeAttentionChunk: vaeAttentionChunk,
+			spatialConvChunkRows: spatialConvChunkRows
+		) {
+			Memory.peakMemory = 0
+			Memory.clearCache()
+			let model: MoebiusModel = try MoebiusModel.load(from: directory)
+			let pipeline: MoebiusPipeline = .init(model: model)
+			let input: MoebiusImageInput = .init(imageNHWC: sample.image, maskNHWC: sample.mask)
+			let startedAt: Date = .init()
+			let values: [Float] = try pipeline.runImageRGBFloats(input: input, options: options)
+			return TimedImageResult(values: values, seconds: Date().timeIntervalSince(startedAt))
+		}
+	}
+
+	private static func withLowMemoryEnvironment<Result>(
+		enabled: Bool,
+		cacheLimitMB: Int?,
+		serialCFG: Bool?,
+		vaeAttentionChunk: Int?,
+		spatialConvChunkRows: Int?,
+		_ body: () throws -> Result
+	) throws -> Result {
+		let keys: [String] = [
+			"MOEBIUS_MLX_LOW_MEMORY",
+			"MOEBIUS_MLX_CACHE_LIMIT_MB",
+			"MOEBIUS_MLX_SERIAL_CFG",
+			"MOEBIUS_MLX_VAE_ATTENTION_CHUNK",
+			"MOEBIUS_MLX_CHUNK_VAE_ATTENTION",
+			"MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS",
+		]
+		let previous: [String: String] = keys.reduce(into: [:]) { result, key in
+			if let value = getenv(key).map({ String(cString: $0) }) {
+				result[key] = value
+			}
+		}
+		defer {
+			for key in keys {
+				if let value = previous[key] {
+					setenv(key, value, 1)
+				}
+				else {
+					unsetenv(key)
+				}
+			}
+		}
+
+		if enabled {
+			setenv("MOEBIUS_MLX_LOW_MEMORY", "1", 1)
+			if let cacheLimitMB {
+				setenv("MOEBIUS_MLX_CACHE_LIMIT_MB", String(cacheLimitMB), 1)
+			}
+			if let serialCFG {
+				setenv("MOEBIUS_MLX_SERIAL_CFG", serialCFG ? "1" : "0", 1)
+			}
+			if let vaeAttentionChunk {
+				setenv("MOEBIUS_MLX_VAE_ATTENTION_CHUNK", String(vaeAttentionChunk), 1)
+			}
+			if let spatialConvChunkRows {
+				setenv("MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS", String(spatialConvChunkRows), 1)
+			}
+		}
+		else {
+			for key in keys {
+				unsetenv(key)
+			}
+		}
+
+		return try body()
+	}
+
+	private static func resolveModelDirectory(_ model: String) throws -> URL {
+		let local: URL = .init(fileURLWithPath: model, isDirectory: true)
+		if FileManager.default.fileExists(atPath: local.path) {
+			return local
+		}
+		return try MoebiusModelResolver.resolve(name: model)
+	}
+
+	private struct TimedImageResult {
+		let values: [Float]
+		let seconds: TimeInterval
 	}
 }
 

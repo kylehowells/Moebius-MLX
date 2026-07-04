@@ -169,6 +169,20 @@ The standard lower-precision packages quantize supported UNet `Linear` and `Embe
 
 The default q4 package keeps the VAE unquantized because VAE quantization is visually sensitive in the current benchmarks. The experimental `ft_places2` size-target variants additionally pack selected pointwise/spatial convolutions and quantized VAE files to reduce deployment size.
 
+On physical iOS devices, and when `MOEBIUS_MLX_LOW_MEMORY=1` is set on macOS, the runtime uses a conservative MLX cache limit and releases transient buffers between image-pipeline stages. Quantized spatial convolutions also run in row chunks by default (`MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS`, default `32`) so the VAE decoder does not materialize full 512x512 im2col matrices at once. The `quality-check` CLI compares the normal and low-memory paths on a fixed input with zero tolerances; this is the guardrail for keeping memory optimizations output-preserving.
+
+Current low-memory measurements for `ft_places2-q4-all-spatial-vae`, `steps=8`, fixed synthetic input:
+
+| Runtime mode | Platform | Duration | Peak MLX memory | Fidelity vs batched default |
+|---|---:|---:|---:|---:|
+| Batched CFG default | Apple Silicon macOS CLI | 10.13 s | 3228 MB denoising, 1524 MB isolated decode | Exact, `max_abs=0` |
+| Serial CFG fallback, `MOEBIUS_MLX_SERIAL_CFG=1` | Apple Silicon macOS CLI | 10.43 s | 1917 MB denoising, 1524 MB isolated decode | Slight delta, `max_abs=0.00214`, PSNR 76.9 dB |
+| Batched CFG default, debugger attached | iPad13,11 device app | 22.45 s | 3349 MB observed MLX peak | Completed successfully |
+
+Serial CFG is therefore an emergency memory mode, not the default. It makes lower-memory devices more plausible, but the default remains batched CFG because it is faster and preserves the reference output exactly in the fixed-input quality check.
+
+Internal memory trace lines are disabled during normal app inference. The `memory-profile` command enables `MOEBIUS_MLX_MEMORY_TRACE=1` so detailed `mlx-trace` rows are available during profiling. Some first-run Metal shader compilation warnings still come from MLX itself; they are noisy but did not prevent the real-device run above from completing.
+
 Current benchmark interpretation:
 
 - `f32` is the strict parity target and should stay very close to the reference runtime.

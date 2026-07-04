@@ -2,6 +2,9 @@ import Foundation
 import Hub
 import MLX
 import MLXNN
+#if os(iOS) && !targetEnvironment(macCatalyst)
+import Darwin
+#endif
 
 // MARK: - MoebiusDownloadProgress
 
@@ -80,6 +83,7 @@ public final class MoebiusModel: @unchecked Sendable {
 		revision: String = MoebiusModelResolver.defaultHubRevision,
 		hfToken: String? = nil,
 		downloadBase: URL? = nil,
+		retainLoadedWeights: Bool = false,
 		progress: ((String) -> Void)? = nil,
 		onDownloadProgress: @escaping (MoebiusDownloadProgress) -> Void = { _ in }
 	) async throws -> MoebiusModel {
@@ -91,14 +95,24 @@ public final class MoebiusModel: @unchecked Sendable {
 			progress: progress,
 			onDownloadProgress: onDownloadProgress
 		)
-		return try self.load(from: directory, progress: progress)
+		return try self.load(from: directory, retainLoadedWeights: retainLoadedWeights, progress: progress)
 	}
 
 	/// Loads a converted Moebius MLX model from a local directory.
 	///
 	/// The directory must contain `manifest.json` and all files referenced by the manifest.
-	public static func load(from directory: URL, progress: ((String) -> Void)? = nil) throws -> MoebiusModel {
+	///
+	/// Set `retainLoadedWeights` only for diagnostics that need to inspect the raw
+	/// arrays loaded from safetensors. Normal app inference should leave it `false`
+	/// so temporary source arrays can be released after they have been applied to
+	/// the runtime modules.
+	public static func load(
+		from directory: URL,
+		retainLoadedWeights: Bool = false,
+		progress: ((String) -> Void)? = nil
+	) throws -> MoebiusModel {
 		try MoebiusRuntime.validateModelExecutionSupport()
+		MoebiusRuntime.configureMemoryForCurrentPlatform()
 		progress?("Reading manifest")
 		let manifestURL: URL = directory.appendingPathComponent("manifest.json")
 		let manifestData: Data = try Data(contentsOf: manifestURL)
@@ -167,13 +181,14 @@ public final class MoebiusModel: @unchecked Sendable {
 		progress?("Evaluating model parameters")
 		MLX.eval(unetModel.parameters(), autoencoder.parameters())
 		MLX.eval(Array(unet.values) + Array(vaeEncoder.values) + Array(vaeDecoder.values))
+		MoebiusRuntime.clearTransientCache()
 		progress?("Model loaded")
 		return MoebiusModel(
 			manifest: manifest,
 			modelDirectory: directory,
-			unetWeights: unet,
-			vaeEncoderWeights: vaeEncoder,
-			vaeDecoderWeights: vaeDecoder,
+			unetWeights: retainLoadedWeights ? unet : [:],
+			vaeEncoderWeights: retainLoadedWeights ? vaeEncoder : [:],
+			vaeDecoderWeights: retainLoadedWeights ? vaeDecoder : [:],
 			unet: unetModel,
 			autoencoder: autoencoder
 		)
@@ -414,6 +429,20 @@ public final class MoebiusModel: @unchecked Sendable {
 
 /// Runtime capability checks for platforms where MLX model execution is unavailable.
 public enum MoebiusRuntime {
+	/// Whether the current platform should aggressively release cached MLX
+	/// buffers between pipeline stages.
+	public static var aggressivelyClearsTransientCaches: Bool {
+		if self.lowMemoryDiagnosticsEnabled {
+			return true
+		}
+
+		#if os(iOS) && !targetEnvironment(simulator)
+		return true
+		#else
+		return false
+		#endif
+	}
+
 	/// Whether the current process can execute Moebius MLX models.
 	public static var supportsModelExecution: Bool {
 		#if os(iOS) && targetEnvironment(simulator)
@@ -428,6 +457,118 @@ public enum MoebiusRuntime {
 		if self.supportsModelExecution == false {
 			throw MoebiusError.unsupportedRuntime("Moebius MLX model execution is not supported on iOS Simulator because MLX Swift aborts while initializing its Metal stream/device. Run the demo as Mac Catalyst or on a physical iPad/iPhone.")
 		}
+	}
+
+	/// Applies conservative MLX memory defaults on memory-constrained platforms.
+	public static func configureMemoryForCurrentPlatform() {
+		if let cacheLimit: Int = self.environmentInteger("MOEBIUS_MLX_CACHE_LIMIT_MB") {
+			Memory.cacheLimit = cacheLimit * 1024 * 1024
+		}
+		else if self.aggressivelyClearsTransientCaches {
+			Memory.cacheLimit = 20 * 1024 * 1024
+		}
+	}
+
+	/// Releases cached MLX buffers when the current platform benefits from it.
+	public static func clearTransientCache() {
+		if self.aggressivelyClearsTransientCaches {
+			Memory.clearCache()
+		}
+	}
+
+	/// Returns a compact MLX memory summary for diagnostics.
+	public static func memoryDebugSummary() -> String {
+		let snapshot: Memory.Snapshot = Memory.snapshot()
+		let available: String = self.availableMemoryMB().map { " available=\($0)MB" } ?? ""
+		return "mlxActive=\(self.megabytes(snapshot.activeMemory))MB mlxCache=\(self.megabytes(snapshot.cacheMemory))MB mlxPeak=\(self.megabytes(snapshot.peakMemory))MB\(available)"
+	}
+
+	/// Returns the current app dirty-memory headroom on platforms where Apple exposes it.
+	public static func availableMemoryMB() -> Int? {
+		#if os(iOS) && !targetEnvironment(macCatalyst)
+		let bytes: Int = .init(os_proc_available_memory())
+		guard bytes > 0 else {
+			return nil
+		}
+
+		return self.megabytes(bytes)
+		#else
+		return nil
+		#endif
+	}
+
+	/// Query chunk size used by VAE attention when low-memory mode is active.
+	public static var vaeAttentionChunkSize: Int {
+		return max(1, self.environmentInteger("MOEBIUS_MLX_VAE_ATTENTION_CHUNK") ?? 256)
+	}
+
+	/// Output rows per chunk for quantized spatial convolutions in low-memory mode.
+	public static var spatialConvolutionChunkRows: Int {
+		return max(1, self.environmentInteger("MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS") ?? 32)
+	}
+
+	/// Whether classifier-free guidance should run as two serial UNet passes.
+	public static var usesSerialClassifierFreeGuidance: Bool {
+		return self.environmentBoolean(
+			"MOEBIUS_MLX_SERIAL_CFG",
+			defaultValue: false
+		)
+	}
+
+	static var usesChunkedVAEAttention: Bool {
+		return self.environmentBoolean("MOEBIUS_MLX_CHUNK_VAE_ATTENTION", defaultValue: false)
+	}
+
+	static func traceMemory(_ stage: String, evaluate array: MLXArray? = nil) {
+		guard self.aggressivelyClearsTransientCaches else {
+			return
+		}
+
+		if let array {
+			eval(array)
+		}
+		if self.memoryTraceEnabled {
+			let line: String = "mlx-trace \(stage) \(self.memoryDebugSummary())"
+			FileHandle.standardError.write(Data("\(line)\n".utf8))
+		}
+		self.clearTransientCache()
+	}
+
+	private static var lowMemoryDiagnosticsEnabled: Bool {
+		return self.environmentBoolean("MOEBIUS_MLX_LOW_MEMORY", defaultValue: false)
+	}
+
+	private static var memoryTraceEnabled: Bool {
+		return self.environmentBoolean("MOEBIUS_MLX_MEMORY_TRACE", defaultValue: false)
+	}
+
+	private static func environmentBoolean(_ key: String, defaultValue: Bool) -> Bool {
+		guard let value: String = ProcessInfo.processInfo.environment[key] else {
+			return defaultValue
+		}
+
+		switch value.lowercased() {
+			case "1", "true", "yes", "on":
+				return true
+
+			case "0", "false", "no", "off":
+				return false
+
+			default:
+				return defaultValue
+		}
+	}
+
+	private static func environmentInteger(_ key: String) -> Int? {
+		guard let value: String = ProcessInfo.processInfo.environment[key] else {
+			return nil
+		}
+
+		return Int(value)
+	}
+
+	private static func megabytes(_ bytes: Int) -> Int {
+		return Int((Double(bytes) / 1_000_000).rounded())
 	}
 }
 

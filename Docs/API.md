@@ -178,6 +178,8 @@ Subcommands:
 | `u-net-smoke` | Run one CFG UNet prediction on zero latent inputs and print the output shape. |
 | `image-smoke` | Run the full image pipeline on a synthetic sample and print output stats. |
 | `generate-image` | Run one file-backed image/mask pair through a converted model and write a PNG. |
+| `memory-profile` | Run one image pipeline pass while logging RSS and MLX active/cache/peak memory at each stage. |
+| `quality-check` | Compare normal and low-memory image-pipeline outputs for the same fixed input and tolerances. |
 | `compare-image` | Run a deterministic sample across precision variants and compare image outputs. |
 | `benchmark-image` | Compare synthetic or file-backed image output against a reference model. |
 | `benchmark-fixture` | Compare MLX final latents against a deterministic PyTorch/ONNX fixture. |
@@ -195,6 +197,25 @@ swift run moebius-mlx download https://huggingface.co/iky1e/moebius-ft-places2-m
   --download-base /tmp/moebius-hf-snapshots
 
 swift run moebius-mlx image-smoke ft_places2-f16 --steps 2
+
+swift run moebius-mlx quality-check ft_places2-q4-all-spatial-vae \
+  --steps 1 \
+  --seed 7 \
+  --sample gradient-circle \
+  --max-abs-tolerance 0 \
+  --mean-abs-tolerance 0
+
+swift run moebius-mlx memory-profile ft_places2-q4-all-spatial-vae \
+  --steps 1 \
+  --low-memory \
+  --cache-limit-mb 20 \
+  --reset-peak-at-stages
+
+MOEBIUS_MLX_SERIAL_CFG=1 swift run moebius-mlx memory-profile ft_places2-q4-all-spatial-vae \
+  --steps 8 \
+  --low-memory \
+  --cache-limit-mb 20 \
+  --reset-peak-at-stages
 
 swift run moebius-mlx compare-image ft_places2 --steps 2
 

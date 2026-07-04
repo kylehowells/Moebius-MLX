@@ -45,6 +45,21 @@ final class DemoInspectorPanelView: UIView {
 		return button
 	}()
 
+	let modelProgressLabel: UILabel = {
+		let label: UILabel = DemoInspectorPanelView.makeControlLabel()
+		label.isHidden = true
+		return label
+	}()
+
+	let modelProgressView: UIProgressView = {
+		let progressView: UIProgressView = .init(progressViewStyle: .default)
+		progressView.progress = 0
+		progressView.isHidden = true
+		progressView.accessibilityIdentifier = "model-download-progress"
+		progressView.accessibilityLabel = "Model download progress"
+		return progressView
+	}()
+
 	let stepsLabel: UILabel = DemoInspectorPanelView.makeControlLabel()
 	let guidanceLabel: UILabel = DemoInspectorPanelView.makeControlLabel()
 	let seedLabel: UILabel = DemoInspectorPanelView.makeControlLabel()
@@ -116,6 +131,8 @@ final class DemoInspectorPanelView: UIView {
 			self.modelHeaderLabel,
 			self.modelSubtitleLabel,
 			self.modelButton,
+			self.modelProgressLabel,
+			self.modelProgressView,
 			self.generationHeaderLabel,
 			self.generationSubtitleLabel,
 			self.stepsLabel,
@@ -150,6 +167,7 @@ final class DemoInspectorPanelView: UIView {
 	
 	func configurePreviewState() {
 		self.modelButton.setTitle("ft_places2-f16", for: .normal)
+		self.setModelDownloadProgress(title: "Downloading ft_places2-f16 42%", progress: 0.42, isVisible: true)
 		self.stepsLabel.text = "Denoising steps: 8"
 		self.guidanceLabel.text = "Guidance scale: 2.0"
 		self.seedLabel.text = "Random seed: 7"
@@ -159,6 +177,14 @@ final class DemoInspectorPanelView: UIView {
 		self.seedStepper.value = 7
 		self.brushSlider.value = 32
 		self.pasteBackSwitch.isOn = true
+	}
+
+	func setModelDownloadProgress(title: String?, progress: Float, isVisible: Bool) {
+		self.modelProgressLabel.text = title
+		self.modelProgressLabel.isHidden = isVisible == false
+		self.modelProgressView.isHidden = isVisible == false
+		self.modelProgressView.progress = min(1, max(0, progress))
+		self.setNeedsLayout()
 	}
 	
 	// MARK: - Layout
@@ -170,6 +196,8 @@ final class DemoInspectorPanelView: UIView {
 		static let titleHeight: CGFloat = 22
 		static let maximumSubtitleHeight: CGFloat = 48
 		static let buttonHeight: CGFloat = 40
+		static let progressLabelHeight: CGFloat = 22
+		static let progressViewHeight: CGFloat = 8
 		static let compactButtonHeight: CGFloat = 36
 		static let controlLabelHeight: CGFloat = 24
 		static let rowLabelHeight: CGFloat = 32
@@ -213,7 +241,47 @@ final class DemoInspectorPanelView: UIView {
 			frame.size.height = Layout.buttonHeight
 			return frame
 		}()
-		currentY = self.modelButton.frame.maxY + Layout.sectionSpacing
+		currentY = self.modelButton.frame.maxY
+		if self.modelProgressView.isHidden == false {
+			currentY += Layout.smallSpacing
+			self.modelProgressLabel.frame = {
+				var frame: CGRect = .init()
+				frame.origin.x = contentX
+				frame.origin.y = currentY
+				frame.size.width = contentWidth
+				frame.size.height = Layout.progressLabelHeight
+				return frame
+			}()
+			currentY = self.modelProgressLabel.frame.maxY + Layout.smallSpacing
+			self.modelProgressView.frame = {
+				var frame: CGRect = .init()
+				frame.origin.x = contentX
+				frame.origin.y = currentY
+				frame.size.width = contentWidth
+				frame.size.height = Layout.progressViewHeight
+				return frame
+			}()
+			currentY = self.modelProgressView.frame.maxY + Layout.sectionSpacing
+		}
+		else {
+			self.modelProgressLabel.frame = {
+				var frame: CGRect = .init()
+				frame.origin.x = contentX
+				frame.origin.y = currentY
+				frame.size.width = contentWidth
+				frame.size.height = 0
+				return frame
+			}()
+			self.modelProgressView.frame = {
+				var frame: CGRect = .init()
+				frame.origin.x = contentX
+				frame.origin.y = currentY
+				frame.size.width = contentWidth
+				frame.size.height = 0
+				return frame
+			}()
+			currentY += Layout.sectionSpacing
+		}
 
 		currentY = self.layoutHeader(
 			titleLabel: self.generationHeaderLabel,

@@ -47,9 +47,22 @@ public final class MoebiusPipeline: @unchecked Sendable {
 	) throws -> MLXArray {
 		let timesteps: [Int] = self.scheduler.timesteps(steps: options.steps, strength: options.strength)
 		var latents: MLXArray = initialLatents.asType(.float32)
-		let inputIDs: MLXArray = .init(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
-		let conditioning: MoebiusUNetConditioning = self.model.unet.prepareConditioning(inputIDs: inputIDs)
-		eval(conditioning.arrays)
+		let conditioning: MoebiusUNetConditioning?
+		let serialConditioning: (first: MoebiusUNetConditioning, second: MoebiusUNetConditioning)?
+		if MoebiusRuntime.usesSerialClassifierFreeGuidance {
+			conditioning = nil
+			serialConditioning = (
+				self.model.unet.prepareConditioning(inputIDs: .init(Array(10 ..< 20), [1, 10])),
+				self.model.unet.prepareConditioning(inputIDs: .init(Array(0 ..< 10), [1, 10]))
+			)
+			eval(serialConditioning!.first.arrays + serialConditioning!.second.arrays)
+		}
+		else {
+			let inputIDs: MLXArray = .init(Array(10 ..< 20) + Array(0 ..< 10), [2, 10])
+			conditioning = self.model.unet.prepareConditioning(inputIDs: inputIDs)
+			serialConditioning = nil
+			eval(conditioning!.arrays)
+		}
 
 		for (index, timestep) in timesteps.enumerated() {
 			let previous: Int = index + 1 < timesteps.count ? timesteps[index + 1] : -1
@@ -60,13 +73,21 @@ public final class MoebiusPipeline: @unchecked Sendable {
 				maskedLatents: maskedLatents,
 				timestep: timestep,
 				guidanceScale: options.guidanceScale,
-				conditioning: conditioning
+				conditioning: conditioning,
+				serialConditioning: serialConditioning
 			)
 			latents = self.scheduler.step(noise: noise.asType(.float32), sample: latents, timestep: timestep, previousTimestep: previous)
-			asyncEval(latents)
+			if MoebiusRuntime.aggressivelyClearsTransientCaches {
+				eval(latents)
+			}
+			else {
+				asyncEval(latents)
+			}
+			MoebiusRuntime.clearTransientCache()
 		}
 
 		eval(latents)
+		MoebiusRuntime.clearTransientCache()
 		return latents
 	}
 
@@ -96,13 +117,36 @@ public final class MoebiusPipeline: @unchecked Sendable {
 		maskedLatents: MLXArray,
 		timestep: Int,
 		guidanceScale: Float,
-		conditioning: MoebiusUNetConditioning?
+		conditioning: MoebiusUNetConditioning?,
+		serialConditioning: (first: MoebiusUNetConditioning, second: MoebiusUNetConditioning)? = nil
 	) throws -> MLXArray {
 		let dtype: DType = self.model.manifest.precision.dtype
 		let input: MLXArray = concatenated(
 			[latents.asType(dtype), mask64.asType(dtype), maskedLatents.asType(dtype)],
 			axis: -1
 		)
+
+		if MoebiusRuntime.usesSerialClassifierFreeGuidance {
+			let firstConditioning: MoebiusUNetConditioning
+			let secondConditioning: MoebiusUNetConditioning
+			if let serialConditioning {
+				firstConditioning = serialConditioning.first
+				secondConditioning = serialConditioning.second
+			}
+			else {
+				firstConditioning = self.model.unet.prepareConditioning(inputIDs: .init(Array(10 ..< 20), [1, 10]))
+				secondConditioning = self.model.unet.prepareConditioning(inputIDs: .init(Array(0 ..< 10), [1, 10]))
+				eval(firstConditioning.arrays + secondConditioning.arrays)
+			}
+
+			let timestepArray: MLXArray = .init([timestep])
+			let firstNoise: MLXArray = self.model.unet(latent: input, timesteps: timestepArray, conditioning: firstConditioning)
+			eval(firstNoise)
+			MoebiusRuntime.clearTransientCache()
+			let secondNoise: MLXArray = self.model.unet(latent: input, timesteps: timestepArray, conditioning: secondConditioning)
+			return firstNoise + MLXArray(guidanceScale).asType(dtype) * (secondNoise - firstNoise)
+		}
+
 		let batchedInput: MLXArray = concatenated([input, input], axis: 0)
 		let timesteps: MLXArray = .init([timestep, timestep])
 		let noise: MLXArray

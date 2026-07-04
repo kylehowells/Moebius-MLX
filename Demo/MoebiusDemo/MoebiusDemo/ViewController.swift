@@ -22,6 +22,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		self.applyEnvironmentDefaults()
+		self.selectAvailableModelDefaultIfNeeded()
 
 		self.reloadModelMenu()
 		self.reloadImageLoadMenu()
@@ -73,11 +74,13 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		let environment: [String: String] = ProcessInfo.processInfo.environment
 		if let modelName: String = environment["MOEBIUS_DEMO_MODEL"], let index: Int = self.modelNames.firstIndex(of: modelName) {
 			self.selectedModelIndex = index
+			self.didApplyEnvironmentModelSelection = true
 		}
 		if let precision: String = environment["MOEBIUS_DEMO_PRECISION"], let index: Int = self.precisionOptions().firstIndex(where: { option in
 			option.title == precision || option.suffix == precision || option.variantName == precision
 		}) {
 			self.selectedPrecisionIndex = index
+			self.didApplyEnvironmentModelSelection = true
 		}
 		if let stepsValue: String = environment["MOEBIUS_DEMO_STEPS"], let steps: Int = Int(stepsValue) {
 			self.stepCount = max(2, min(24, steps))
@@ -203,8 +206,13 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		DemoVariantOption(title: "q4 322M", variantName: "ft_places2-q4-ff-spatial-vae"),
 		DemoVariantOption(title: "q4 200M", variantName: "ft_places2-q4-all-spatial-vae"),
 	]
+	private var didApplyEnvironmentModelSelection: Bool = false
 	private var selectedModelIndex: Int = 0
+	#if os(iOS) && !targetEnvironment(macCatalyst)
+	private var selectedPrecisionIndex: Int = 7
+	#else
 	private var selectedPrecisionIndex: Int = 1
+	#endif
 
 	private func precisionOptions() -> [DemoVariantOption] {
 		let modelName: String = self.modelNames[self.selectedModelIndex]
@@ -212,6 +220,63 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 			return self.standardPrecisionOptions + self.candidatePrecisionOptions
 		}
 		return self.standardPrecisionOptions
+	}
+
+	private func selectAvailableModelDefaultIfNeeded() {
+		guard self.didApplyEnvironmentModelSelection == false else {
+			self.appendRunLog("Model preset", detail: "Using environment selection")
+			return
+		}
+
+		let currentVariant: String = self.precisionOptions()[self.selectedPrecisionIndex].resolvedVariant(modelName: self.modelNames[self.selectedModelIndex])
+		for candidate in self.availableDefaultCandidates() {
+			if DemoModelLocator.resolveLocalOrCached(variant: candidate.variant) != nil {
+				self.selectedModelIndex = candidate.modelIndex
+				self.selectedPrecisionIndex = candidate.precisionIndex
+				self.appendRunLog("Model preset", detail: "Selected local \(candidate.variant)")
+				return
+			}
+		}
+
+		self.appendRunLog("Model preset", detail: "\(currentVariant) selected; no local models found")
+	}
+
+	private func availableDefaultCandidates() -> [(modelIndex: Int, precisionIndex: Int, variant: String)] {
+		let preferredSuffixes: [String] = [
+			"q4-all-spatial-vae",
+			"q4-ff-spatial-vae",
+			"q4",
+			"mxfp4",
+			"mxfp8",
+			"q8",
+			"f16",
+			"f32",
+		]
+		var candidates: [(modelIndex: Int, precisionIndex: Int, variant: String, rank: Int)] = []
+		for (modelIndex, modelName) in self.modelNames.enumerated() {
+			let options: [DemoVariantOption] = modelName == "ft_places2" ? self.standardPrecisionOptions + self.candidatePrecisionOptions : self.standardPrecisionOptions
+			for (precisionIndex, option) in options.enumerated() {
+				let variant: String = option.resolvedVariant(modelName: modelName)
+				let rank: Int = preferredSuffixes.firstIndex(where: { suffix in
+					return variant.hasSuffix("-\(suffix)")
+				}) ?? preferredSuffixes.count
+				candidates.append((modelIndex, precisionIndex, variant, rank))
+			}
+		}
+
+		return candidates
+			.sorted { lhs, rhs in
+				if lhs.rank != rhs.rank {
+					return lhs.rank < rhs.rank
+				}
+				if lhs.modelIndex != rhs.modelIndex {
+					return lhs.modelIndex < rhs.modelIndex
+				}
+				return lhs.precisionIndex < rhs.precisionIndex
+			}
+			.map { candidate in
+				return (candidate.modelIndex, candidate.precisionIndex, candidate.variant)
+			}
 	}
 
 	private func reloadModelMenu() {
@@ -238,6 +303,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 					self.selectedModelIndex = modelIndex
 					self.selectedPrecisionIndex = precisionIndex
 					self.reloadModelMenu()
+					self.hideDownloadProgress()
 					self.updateSelectedModelAvailabilityStatus(prefix: "Selected")
 				})
 			})
@@ -248,6 +314,14 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self._view.modelButton.menu = UIMenu(title: "Model", children: modelMenus)
 		self._view.modelButton.showsMenuAsPrimaryAction = true
 		self._view.modelButton.setTitle(variant, for: .normal)
+	}
+
+	private func hideDownloadProgress() {
+		self._view.inspectorPanel.setModelDownloadProgress(title: nil, progress: 0, isVisible: false)
+	}
+
+	private func showDownloadProgress(title: String, progress: Float) {
+		self._view.inspectorPanel.setModelDownloadProgress(title: title, progress: progress, isVisible: true)
 	}
 
 	// MARK: - Running Models
@@ -294,11 +368,15 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 			return DemoModelLocator.resolveLocalOrCached(variant: variant) == nil
 		}
 		guard missingVariants.isEmpty == false else {
+			self.hideDownloadProgress()
+			self.appendRunLog("Model check", detail: "All requested models are local")
 			self.runVariants(variants, resultMode: resultMode)
 			return
 		}
 
 		self.updateStatus("Checking download size for \(missingVariants.count) missing model\(missingVariants.count == 1 ? "" : "s")")
+		self.showDownloadProgress(title: "Checking download size...", progress: 0)
+		self.appendRunLog("Model check", detail: "\(missingVariants.count) missing; checking download size")
 		
 		Task.init(operation: { [weak self] in
 			guard let self else { return }
@@ -325,7 +403,10 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		let title: String = missingVariants.count == 1 ? "Download model?" : "Download \(missingVariants.count) models?"
 		let message: String = "Missing:\n\(missingVariants.joined(separator: "\n"))\n\nDownload size: \(sizeText)\n\nThe demo checks an optional development model folder first, then the Hugging Face cache. These models were not found locally."
 		let alert: UIAlertController = .init(title: title, message: message, preferredStyle: .alert)
-		alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+		alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
+			self?.appendRunLog("Download canceled", detail: sizeText)
+			self?.hideDownloadProgress()
+		}))
 		alert.addAction(UIAlertAction(title: "Download", style: .default, handler: { [weak self] _ in
 			self?.downloadModelsThenRun(missingVariants: missingVariants, allVariants: variants, resultMode: resultMode)
 		}))
@@ -338,24 +419,42 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self.isRunning = true
 		self.setRunControlsEnabled(false)
 		self.updateStatus("Preparing download")
-		
+		self.showDownloadProgress(title: "Preparing download...", progress: 0)
+		self.appendRunLog("Download", detail: "Starting \(missingVariants.count) model\(missingVariants.count == 1 ? "" : "s")")
+
 		Task { [weak self] in
 			guard let self else { return }
 
 			do {
 				for (index, variant) in missingVariants.enumerated() {
+					var lastDownloadMilestone: Int = -1
 					_ = try await MoebiusModelResolver.resolveOrDownload(
 						source: variant,
 						progress: { message in
 							Task { @MainActor [weak self] in
-								self?.updateStatus("\(variant): \(message)")
+								guard let self else { return }
+
+								let overallProgress: Float = .init(index) / Float(missingVariants.count)
+								self.showDownloadProgress(title: "\(index + 1)/\(missingVariants.count) \(variant): \(message)", progress: overallProgress)
+								self.appendRunLog("Download", detail: "\(variant): \(message)")
+								self.updateStatus("\(variant): \(message)")
 							}
 						},
 						onDownloadProgress: { progress in
 							Task { @MainActor [weak self] in
+								guard let self else { return }
+
 								let percent: Double = progress.fractionCompleted * 100
 								let speed: String = progress.bytesPerSecond.map { "\(DemoModelLocator.formatBytes(Int64($0)))/s" } ?? ""
-								self?.updateStatus("\(variant): downloading \(index + 1)/\(missingVariants.count) \(String(format: "%.1f", percent))% \(speed)")
+								let overallProgress: Float = (Float(index) + Float(progress.fractionCompleted)) / Float(missingVariants.count)
+								let progressTitle: String = "\(index + 1)/\(missingVariants.count) \(variant) \(String(format: "%.1f", percent))% \(speed)"
+								self.showDownloadProgress(title: progressTitle, progress: overallProgress)
+								let milestone: Int = .init(percent / 10) * 10
+								if milestone != lastDownloadMilestone {
+									lastDownloadMilestone = milestone
+									self.appendRunLog("Download", detail: "\(variant): \(milestone)% \(speed)")
+								}
+								self.updateStatus("\(variant): downloading \(index + 1)/\(missingVariants.count) \(String(format: "%.1f", percent))% \(speed)")
 							}
 						}
 					)
@@ -363,11 +462,14 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 				await MainActor.run(body: {
 					self.isRunning = false
 					self.setRunControlsEnabled(true)
+					self.hideDownloadProgress()
+					self.appendRunLog("Download", detail: "Finished")
 					self.runVariants(allVariants, resultMode: resultMode)
 				})
 			}
 			catch {
 				await MainActor.run(body: {
+					self.appendRunLog("Download failed", detail: error.localizedDescription)
 					self.finishRun(status: "Download failed: \(error.localizedDescription)")
 				})
 			}
@@ -381,6 +483,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self.isRunning = true
 		self.setRunControlsEnabled(false)
 		self.updateStatus(isComparisonRun ? "\(self.modelNames[self.selectedModelIndex]): comparing variants" : "\(firstVariant): loading")
+		self.appendRunLog("Run started", detail: variants.joined(separator: ", "))
 		DemoAutorun.write(status: "started \(variants.joined(separator: ","))")
 		let stepCount: Int = self.stepCount
 		let guidanceScale: Float = self.guidanceScale
@@ -418,6 +521,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 				do {
 					DemoAutorun.write(status: "resolving \(variant)")
 					DispatchQueue.main.async(execute: {
+						self?.appendRunLog("Resolving", detail: variant)
 						self?.updateStatus(isComparisonRun ? "\(variant): \(index + 1)/\(variants.count)" : "\(variant): loading")
 					})
 					let directory: URL = try DemoModelLocator.resolveForRun(variant: variant)
@@ -427,23 +531,32 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 					let model: MoebiusModel = try MoebiusModel.load(from: directory, progress: { stage in
 						DemoAutorun.write(status: "loading \(variant): \(stage)")
 						DispatchQueue.main.async(execute: {
+							self?.appendRunLog("Loading", detail: "\(variant): \(stage)")
 							self?.updateStatus("\(variant): \(stage)")
 						})
 					})
 					DemoAutorun.write(status: "loaded \(variant)")
+					let loadedMemoryMB: Double? = DemoAutorun.residentMemoryMB()
+					DispatchQueue.main.async(execute: {
+						self?.appendRunLog("Loaded", detail: "\(variant), RSS \(DemoAutorun.formatMB(loadedMemoryMB)) MB")
+					})
 					
 					let pipeline: MoebiusPipeline = .init(model: model)
 					let input: MoebiusImageInput = .init(imageNHWC: sample.image, maskNHWC: sample.mask)
 					let options: MoebiusGenerationOptions = .init(steps: stepCount, guidanceScale: guidanceScale, seed: seed, strength: 0.99, pasteBack: pasteBack)
 					let result: [Float] = try pipeline.runImageRGBFloats(input: input, options: options, progress: { progress in
-						DispatchQueue.main.async {
+						DispatchQueue.main.async(execute: {
 							if let step = progress.step, let total = progress.total {
+								if step == 1 || step == total || step % 4 == 0 {
+									self?.appendRunLog("Generating", detail: "\(variant): \(step)/\(total)")
+								}
 								self?.updateStatus("\(variant): \(progress.stage) \(step)/\(total)")
 							}
 							else {
+								self?.appendRunLog("Generating", detail: "\(variant): \(progress.stage)")
 								self?.updateStatus("\(variant): \(progress.stage)")
 							}
-						}
+						})
 					})
 					let stats: DemoFixture.Stats = DemoFixture.stats(values: result)
 					let duration: TimeInterval = Date().timeIntervalSince(startDate)
@@ -557,6 +670,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 	private func finishRun(status: String) {
 		self.isRunning = false
 		self.setRunControlsEnabled(true)
+		self.hideDownloadProgress()
 		self.updateStatus(status)
 	}
 
@@ -575,6 +689,18 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self._view.pasteBackSwitch.isEnabled = isEnabled
 		self._view.clearMaskButton.isEnabled = isEnabled
 		self._view.maskEditorView.isUserInteractionEnabled = isEnabled
+	}
+
+	private func appendRunLog(_ message: String, detail: String? = nil) {
+		let memoryText: String = DemoAutorun.residentMemoryMB().map { String(format: " rss=%.0fMB", $0) } ?? ""
+		let mlxMemoryText: String = " \(MoebiusRuntime.memoryDebugSummary())"
+		if let detail, detail.isEmpty == false {
+			DemoAutorun.write(status: "ui-log \(message): \(detail)\(memoryText)\(mlxMemoryText)")
+		}
+		else {
+			DemoAutorun.write(status: "ui-log \(message)\(memoryText)\(mlxMemoryText)")
+		}
+		self.addRunRecord(DemoRunRecord(logMessage: message, detail: detail))
 	}
 
 	private func addRunRecord(_ record: DemoRunRecord) {

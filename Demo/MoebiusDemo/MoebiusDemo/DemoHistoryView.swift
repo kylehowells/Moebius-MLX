@@ -114,6 +114,11 @@ private final class DemoHistoryRowView: UIView {
 
 		self.alpha = 1
 		self.variantLabel.text = record.variant
+		if record.isLogMessage {
+			self.detailLabel.text = record.status
+			return
+		}
+
 		let meanText: String = record.mean.map { String(format: " mean %.4f", $0) } ?? ""
 		let sizeText: String = record.modelMB.map { String(format: "  %.0f MB", $0) } ?? ""
 		let memoryText: String = record.memoryMB.map { String(format: "  %.0f MB RSS", $0) } ?? ""

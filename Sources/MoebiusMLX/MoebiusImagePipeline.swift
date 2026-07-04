@@ -46,14 +46,25 @@ public extension MoebiusPipeline {
 		progress?(MoebiusProgress(stage: "Preparing mask"))
 		let mask64: MLXArray = MoebiusImageTensors.maskToLatent(mask).asType(dtype)
 		let maskedImage: MLXArray = image * (1 - mask)
+		MoebiusRuntime.clearTransientCache()
 
 		progress?(MoebiusProgress(stage: "Encoding source image"))
-		let encodedImageLatents: MLXArray = self.model.autoencoder.encodeMean(image).asType(dtype)
-		eval(encodedImageLatents)
+		let encodedImageLatents: MLXArray = {
+			let latents: MLXArray = self.model.autoencoder.encodeMean(image).asType(dtype)
+			eval(latents)
+			return latents
+		}()
+		MoebiusRuntime.clearTransientCache()
+		progress?(MoebiusProgress(stage: "Encoded source image"))
 
 		progress?(MoebiusProgress(stage: "Encoding masked image"))
-		let maskedLatents: MLXArray = self.model.autoencoder.encodeMean(maskedImage).asType(dtype)
-		eval(maskedLatents)
+		let maskedLatents: MLXArray = {
+			let latents: MLXArray = self.model.autoencoder.encodeMean(maskedImage).asType(dtype)
+			eval(latents)
+			return latents
+		}()
+		MoebiusRuntime.clearTransientCache()
+		progress?(MoebiusProgress(stage: "Encoded masked image"))
 
 		progress?(MoebiusProgress(stage: "Preparing noise"))
 		let noise: MLXArray = MoebiusImageTensors.initialLatents(
@@ -73,6 +84,8 @@ public extension MoebiusPipeline {
 		else {
 			initialLatents = noise
 		}
+		eval(initialLatents)
+		MoebiusRuntime.clearTransientCache()
 
 		let latents: MLXArray = try self.runLatentFixture(
 			mask64: mask64,
@@ -82,6 +95,7 @@ public extension MoebiusPipeline {
 			progress: progress
 		)
 
+		MoebiusRuntime.clearTransientCache()
 		progress?(MoebiusProgress(stage: "Decoding"))
 		var decoded: MLXArray = self.model.autoencoder.decode(latents).asType(.float32)
 		if options.pasteBack {
@@ -89,6 +103,7 @@ public extension MoebiusPipeline {
 			decoded = (decoded * pasteMask) + (image.asType(.float32) * (1 - pasteMask))
 		}
 		eval(decoded)
+		MoebiusRuntime.clearTransientCache()
 		return decoded
 	}
 

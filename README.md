@@ -177,6 +177,29 @@ Run a small image smoke test:
 swift run moebius-mlx image-smoke ft_places2-f16 --steps 2
 ```
 
+Compare the normal path against the iOS-style low-memory path on a fixed input. This should report zero image difference for the same model and settings:
+
+```bash
+swift run moebius-mlx quality-check ft_places2-q4-all-spatial-vae \
+  --steps 1 \
+  --seed 7 \
+  --sample gradient-circle \
+  --max-abs-tolerance 0 \
+  --mean-abs-tolerance 0
+```
+
+Profile MLX memory with the same low-memory path enabled locally on macOS:
+
+```bash
+swift run moebius-mlx memory-profile ft_places2-q4-all-spatial-vae \
+  --steps 1 \
+  --low-memory \
+  --cache-limit-mb 20 \
+  --reset-peak-at-stages
+```
+
+For tighter memory budgets, serial classifier-free guidance can be enabled with `MOEBIUS_MLX_SERIAL_CFG=1`. It reduces the denoising peak but is a fallback mode because multi-step output is very slightly different from the batched default.
+
 Compare visible precision variants for one family:
 
 ```bash
