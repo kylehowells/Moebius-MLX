@@ -169,7 +169,7 @@ The standard lower-precision packages quantize supported UNet `Linear` and `Embe
 
 The default q4 package keeps the VAE unquantized because VAE quantization is visually sensitive in the current benchmarks. The experimental `ft_places2` size-target variants additionally pack selected pointwise/spatial convolutions and quantized VAE files to reduce deployment size.
 
-On physical iOS devices, and when `MOEBIUS_MLX_LOW_MEMORY=1` is set on macOS, the runtime uses a conservative MLX cache limit and releases transient buffers between image-pipeline stages. Quantized spatial convolutions also run in row chunks by default (`MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS`, default `32`) so the VAE decoder does not materialize full 512x512 im2col matrices at once. The `quality-check` CLI compares the normal and low-memory paths on a fixed input with zero tolerances; this is the guardrail for keeping memory optimizations output-preserving.
+On physical iOS devices, and when `MOEBIUS_MLX_LOW_MEMORY=1` is set on macOS, the runtime uses a conservative MLX cache limit and releases transient buffers between image-pipeline stages. Quantized spatial convolutions also run in row chunks so the VAE decoder does not materialize full 512x512 im2col matrices at once. The default chunk size is `128` output rows for batched classifier-free guidance and `64` rows for serial CFG; `MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS` can still override it. The `quality-check` CLI compares the normal and low-memory paths on a fixed input with zero tolerances; this is the guardrail for keeping memory optimizations output-preserving.
 
 Current low-memory measurements for `ft_places2`, `steps=8`, fixed synthetic input, release CLI on Apple Silicon macOS:
 
@@ -181,10 +181,10 @@ Current low-memory measurements for `ft_places2`, `steps=8`, fixed synthetic inp
 | `ft_places2-mxfp8` | Serial | 601 MB | 1323 MB | 4025 MB | 2636 MB | 9.84 s |
 | `ft_places2-q4` | Batched | 477 MB | 1199 MB | 3501 MB | 2512 MB | 5.83 s |
 | `ft_places2-q4` | Serial | 477 MB | 1199 MB | 2190 MB | 2512 MB | 5.59 s |
-| `ft_places2-q4-ff-spatial-vae` | Batched | 325 MB | 776 MB | 3349 MB | 1645 MB | 8.17 s |
-| `ft_places2-q4-ff-spatial-vae` | Serial | 325 MB | 776 MB | 2038 MB | 1645 MB | 8.33 s |
-| `ft_places2-q4-all-spatial-vae` | Batched | 205 MB | 656 MB | 3228 MB | 1524 MB | 8.14 s |
-| `ft_places2-q4-all-spatial-vae` | Serial | 205 MB | 656 MB | 1917 MB | 1524 MB | 8.12 s |
+| `ft_places2-q4-ff-spatial-vae` | Batched | 325 MB | 776 MB | 3349 MB | 2123 MB | 7.25 s |
+| `ft_places2-q4-ff-spatial-vae` | Serial | 325 MB | 776 MB | 2038 MB | 1804 MB | 7.41 s |
+| `ft_places2-q4-all-spatial-vae` | Batched | 205 MB | 656 MB | 3228 MB | 2002 MB | 8.69 s |
+| `ft_places2-q4-all-spatial-vae` | Serial | 205 MB | 656 MB | 1917 MB | 1684 MB | 7.79 s |
 
 The 322 MB `ft_places2-q4-ff-spatial-vae` package completed a real `iPad13,11` device run with the debugger attached in 22.45 s and an observed 3349 MB MLX peak. The 200 MB `ft_places2-q4-all-spatial-vae` package is the best current candidate for lower-memory iPhone/iPad coverage based on local profiling, but should still be verified on each target device class.
 
@@ -192,8 +192,8 @@ The same fixed-input quality guardrail for `ft_places2-q4-all-spatial-vae`:
 
 | Runtime mode | Platform | Duration | Peak MLX memory | Fidelity vs batched default |
 |---|---:|---:|---:|---:|
-| Batched CFG default | Apple Silicon macOS CLI | 10.13 s | 3228 MB denoising, 1524 MB isolated decode | Exact, `max_abs=0` |
-| Serial CFG fallback, `MOEBIUS_MLX_SERIAL_CFG=1` | Apple Silicon macOS CLI | 10.43 s | 1917 MB denoising, 1524 MB isolated decode | Slight delta, `max_abs=0.00214`, PSNR 76.9 dB |
+| Batched CFG default | Apple Silicon macOS CLI | 7.43 s | 3228 MB denoising, 2002 MB isolated decode | Exact, `max_abs=0` |
+| Serial CFG fallback, `MOEBIUS_MLX_SERIAL_CFG=1` | Apple Silicon macOS CLI | 8.78 s | 1917 MB denoising, 1684 MB isolated decode | Slight delta, `max_abs=0.00214`, PSNR 76.9 dB |
 
 Serial CFG is therefore an emergency memory mode, not the default. It makes lower-memory devices more plausible, but the default remains batched CFG because it is faster and preserves the reference output exactly in the fixed-input quality check.
 

@@ -504,7 +504,15 @@ public enum MoebiusRuntime {
 
 	/// Output rows per chunk for quantized spatial convolutions in low-memory mode.
 	public static var spatialConvolutionChunkRows: Int {
-		return max(1, self.environmentInteger("MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS") ?? 32)
+		if let chunkRows: Int = self.environmentInteger("MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS") {
+			return max(1, chunkRows)
+		}
+
+		if self.usesSerialClassifierFreeGuidance {
+			return 64
+		}
+
+		return 128
 	}
 
 	/// Whether classifier-free guidance should run as two serial UNet passes.

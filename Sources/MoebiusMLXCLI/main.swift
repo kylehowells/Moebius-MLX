@@ -532,8 +532,8 @@ struct MemoryProfile: ParsableCommand {
 	@Option(help: "VAE attention query chunk size used in low-memory mode.")
 	var vaeAttentionChunk: Int = 256
 
-	@Option(help: "Output rows per quantized spatial convolution chunk in low-memory mode.")
-	var spatialConvChunkRows: Int = 32
+	@Option(help: "Output rows per quantized spatial convolution chunk in low-memory mode. Defaults to the runtime mobile profile.")
+	var spatialConvChunkRows: Int?
 
 	@Flag(help: "Force the iOS-style low-memory path on macOS.")
 	var lowMemory: Bool = false
@@ -553,7 +553,9 @@ struct MemoryProfile: ParsableCommand {
 			setenv("MOEBIUS_MLX_CACHE_LIMIT_MB", String(cacheLimitMB), 1)
 		}
 		setenv("MOEBIUS_MLX_VAE_ATTENTION_CHUNK", String(self.vaeAttentionChunk), 1)
-		setenv("MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS", String(self.spatialConvChunkRows), 1)
+		if let spatialConvChunkRows {
+			setenv("MOEBIUS_MLX_SPATIAL_CONV_CHUNK_ROWS", String(spatialConvChunkRows), 1)
+		}
 
 		let sample: SyntheticImageSample = try self.loadSample()
 		let directory: URL = try Self.resolveModelDirectory(self.model)
@@ -687,8 +689,8 @@ struct QualityCheck: ParsableCommand {
 	@Option(help: "VAE attention query chunk size used in low-memory mode.")
 	var vaeAttentionChunk: Int = 32
 
-	@Option(help: "Output rows per quantized spatial convolution chunk in low-memory mode.")
-	var spatialConvChunkRows: Int = 32
+	@Option(help: "Output rows per quantized spatial convolution chunk in low-memory mode. Defaults to the runtime mobile profile.")
+	var spatialConvChunkRows: Int?
 
 	@Flag(help: "Use serial classifier-free guidance in the low-memory candidate. Saves memory but may change multi-step output slightly.")
 	var serialCFG: Bool = false
@@ -740,7 +742,7 @@ struct QualityCheck: ParsableCommand {
 		print("cache_limit_mb: \(self.cacheLimitMB)")
 		print("serial_cfg: \(self.serialCFG)")
 		print("vae_attention_chunk: \(self.vaeAttentionChunk)")
-		print("spatial_conv_chunk_rows: \(self.spatialConvChunkRows)")
+		print("spatial_conv_chunk_rows: \(self.spatialConvChunkRows.map(String.init) ?? "runtime-default")")
 		print("max_abs: \(diff.maxAbs)")
 		print("mean_abs: \(diff.meanAbs)")
 		print("rmse: \(diff.rmse)")
