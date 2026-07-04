@@ -200,6 +200,22 @@ swift run moebius-mlx memory-profile ft_places2-q4-all-spatial-vae \
 
 For tighter memory budgets, serial classifier-free guidance can be enabled with `MOEBIUS_MLX_SERIAL_CFG=1`. It reduces the denoising peak but is a fallback mode because multi-step output is very slightly different from the batched default.
 
+Current `ft_places2` low-memory profile highlights from release CLI runs on Apple Silicon macOS, `steps=8`, fixed synthetic input:
+
+| Variant | CFG mode | Denoise peak | Decode peak | Inference |
+|---|---|---:|---:|---:|
+| `ft_places2-f16` | Batched | 3644 MB | 2656 MB | 7.83 s |
+| `ft_places2-f16` | Serial | 2334 MB | 2656 MB | 5.78 s |
+| `ft_places2-mxfp8` | Batched | 6646 MB | 2636 MB | 9.62 s |
+| `ft_places2-q4` | Batched | 3501 MB | 2512 MB | 5.83 s |
+| `ft_places2-q4` | Serial | 2190 MB | 2512 MB | 5.59 s |
+| `ft_places2-q4-ff-spatial-vae` | Batched | 3349 MB | 1645 MB | 8.17 s |
+| `ft_places2-q4-ff-spatial-vae` | Serial | 2038 MB | 1645 MB | 8.33 s |
+| `ft_places2-q4-all-spatial-vae` | Batched | 3228 MB | 1524 MB | 8.14 s |
+| `ft_places2-q4-all-spatial-vae` | Serial | 1917 MB | 1524 MB | 8.12 s |
+
+The 322 MB `ft_places2-q4-ff-spatial-vae` package has completed on an `iPad13,11` device. The 200 MB `ft_places2-q4-all-spatial-vae` package is the smallest and lowest-memory candidate, but should still be tested on each target iPhone/iPad class.
+
 Compare visible precision variants for one family:
 
 ```bash

@@ -117,10 +117,9 @@ enum DemoModelLocator {
 	// MARK: Local Search
 	
 	private static func resolveLocalOrCachedWithSource(variant: String) -> (directory: URL, source: DemoModelSource)? {
-		let fileManager: FileManager = .default
 		for developerRoot in self.developerModelRoots() {
 			let developerDirectory: URL = developerRoot.appendingPathComponent(variant, isDirectory: true)
-			if fileManager.fileExists(atPath: developerDirectory.appendingPathComponent("manifest.json").path) {
+			if self.directory(developerDirectory, matches: variant) {
 				return (developerDirectory, .developerFolder)
 			}
 		}
@@ -128,7 +127,7 @@ enum DemoModelLocator {
 		if let appDirectory = try? MoebiusModelResolver.resolve(name: variant) {
 			if self.developerModelRoots().contains(where: { root in
 				return appDirectory.standardizedFileURL == root.appendingPathComponent(variant, isDirectory: true).standardizedFileURL
-			}) == false {
+			}) == false, self.directory(appDirectory, matches: variant) {
 				return (appDirectory, .appResolver)
 			}
 		}
@@ -180,7 +179,7 @@ enum DemoModelLocator {
 			.appendingPathComponent("models", isDirectory: true)
 			.appendingPathComponent(parts[0], isDirectory: true)
 			.appendingPathComponent(parts[1], isDirectory: true)
-		if FileManager.default.fileExists(atPath: expectedDirectory.appendingPathComponent("manifest.json").path) {
+		if self.directory(expectedDirectory, matches: variant) {
 			return expectedDirectory
 		}
 		return self.findCachedManifest(variant: variant, under: MoebiusModelResolver.defaultHubDownloadBase())
@@ -204,6 +203,10 @@ enum DemoModelLocator {
 		return nil
 	}
 
+	private static func directory(_ directory: URL, matches variant: String) -> Bool {
+		return self.manifest(at: directory.appendingPathComponent("manifest.json"), matches: variant)
+	}
+
 	private static func manifest(at url: URL, matches variant: String) -> Bool {
 		guard let data: Data = try? Data(contentsOf: url),
 		      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -213,14 +216,97 @@ enum DemoModelLocator {
 			return false
 		}
 
-		if variant.hasPrefix("\(modelName)-\(precision)") {
-			return true
+		guard let expected = Self.expectedManifest(for: variant),
+		      expected.modelName == modelName,
+		      expected.precision == precision
+		else {
+			return false
 		}
-		return variant == modelName
+
+		return expected.matchesPolicies(in: object)
+	}
+
+	private static func expectedManifest(for variant: String) -> ExpectedManifest? {
+		let parts: [String] = variant.split(separator: "-").map(String.init)
+		guard parts.count >= 2 else {
+			return nil
+		}
+
+		let modelName: String
+		let precisionName: String
+		if parts[0] == "pretrained" {
+			modelName = "pretrained"
+			precisionName = parts.dropFirst().joined(separator: "-")
+		}
+		else if parts[0] == "ft_places2" || parts[0] == "ft_celebahq" || parts[0] == "ft_ffhq" {
+			modelName = parts[0]
+			precisionName = parts.dropFirst().joined(separator: "-")
+		}
+		else {
+			return nil
+		}
+
+		switch precisionName {
+			case "q4-ff-spatial-vae":
+				return ExpectedManifest(
+					modelName: modelName,
+					precision: "q4",
+					pointwisePolicy: "feedforward",
+					spatialPolicy: "spatial",
+					vaePolicy: "vae-conv",
+					quantizedVAEConvolutions: true
+				)
+
+			case "q4-all-spatial-vae":
+				return ExpectedManifest(
+					modelName: modelName,
+					precision: "q4",
+					pointwisePolicy: "all",
+					spatialPolicy: "spatial",
+					vaePolicy: "vae-conv",
+					quantizedVAEConvolutions: true
+				)
+
+			default:
+				return ExpectedManifest(
+					modelName: modelName,
+					precision: precisionName,
+					pointwisePolicy: precisionName == "q4" ? "feedforward" : nil,
+					spatialPolicy: nil,
+					vaePolicy: nil,
+					quantizedVAEConvolutions: nil
+				)
+		}
+	}
+
+	// MARK: Expected Manifest
+
+	private struct ExpectedManifest {
+		let modelName: String
+		let precision: String
+		let pointwisePolicy: String?
+		let spatialPolicy: String?
+		let vaePolicy: String?
+		let quantizedVAEConvolutions: Bool?
+
+		func matchesPolicies(in object: [String: Any]) -> Bool {
+			return self.stringValue("quantizedPointwiseConvolutionPolicy", in: object) == self.pointwisePolicy
+				&& self.stringValue("quantizedSpatialConvolutionPolicy", in: object) == self.spatialPolicy
+				&& self.stringValue("quantizedVAEConvolutionPolicy", in: object) == self.vaePolicy
+				&& self.boolValue("quantizedVAEConvolutions", in: object) == self.quantizedVAEConvolutions
+		}
+
+		private func stringValue(_ key: String, in object: [String: Any]) -> String? {
+			return object[key] as? String
+		}
+
+		private func boolValue(_ key: String, in object: [String: Any]) -> Bool? {
+			return object[key] as? Bool
+		}
 	}
 
 	// MARK: Model Metadata
-	
+
 	private static func deploymentBytes(directory: URL) -> Int64? {
 		guard let info: MoebiusModelDeploymentInfo = try? MoebiusModelDeploymentInfo.load(from: directory) else {
 			return nil
