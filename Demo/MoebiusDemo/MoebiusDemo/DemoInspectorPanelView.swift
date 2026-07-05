@@ -65,6 +65,7 @@ final class DemoInspectorPanelView: UIView {
 	let seedLabel: UILabel = DemoInspectorPanelView.makeControlLabel()
 	let brushLabel: UILabel = DemoInspectorPanelView.makeControlLabel()
 	let pasteBackLabel: UILabel = DemoInspectorPanelView.makeControlLabel(text: "Paste back source pixels")
+	let pasteBackSubtitleLabel: UILabel = DemoInspectorPanelView.makeSubtitleLabel(text: "Keeps unmasked areas from the source image and only shows generated pixels inside the painted mask.")
 
 	let stepper: UIStepper = {
 		let stepper: UIStepper = .init()
@@ -140,13 +141,14 @@ final class DemoInspectorPanelView: UIView {
 			self.guidanceSlider,
 			self.seedLabel,
 			self.seedStepper,
+			self.pasteBackLabel,
+			self.pasteBackSubtitleLabel,
+			self.pasteBackSwitch,
 			self.maskToolsHeaderLabel,
 			self.maskToolsSubtitleLabel,
 			self.brushLabel,
 			self.brushSlider,
 			self.paintModeControl,
-			self.pasteBackLabel,
-			self.pasteBackSwitch,
 			self.actionsHeaderLabel,
 			self.actionsSubtitleLabel,
 			self.resetSampleButton,
@@ -291,7 +293,14 @@ final class DemoInspectorPanelView: UIView {
 		currentY = self.layoutStepper(label: self.stepsLabel, stepper: self.stepper, y: currentY, x: contentX, width: contentWidth)
 		currentY = self.layoutSlider(label: self.guidanceLabel, slider: self.guidanceSlider, y: currentY, x: contentX, width: contentWidth)
 		currentY = self.layoutStepper(label: self.seedLabel, stepper: self.seedStepper, y: currentY, x: contentX, width: contentWidth)
-		currentY = self.layoutSwitchRow(label: self.pasteBackLabel, switchView: self.pasteBackSwitch, y: currentY, x: contentX, width: contentWidth)
+		currentY = self.layoutSwitchRow(
+			label: self.pasteBackLabel,
+			subtitleLabel: self.pasteBackSubtitleLabel,
+			switchView: self.pasteBackSwitch,
+			y: currentY,
+			x: contentX,
+			width: contentWidth
+		)
 
 		currentY = self.layoutHeader(
 			titleLabel: self.maskToolsHeaderLabel,
@@ -414,7 +423,7 @@ final class DemoInspectorPanelView: UIView {
 		return slider.frame.maxY + Layout.smallSpacing
 	}
 
-	private func layoutSwitchRow(label: UILabel, switchView: UISwitch, y: CGFloat, x: CGFloat, width: CGFloat) -> CGFloat {
+	private func layoutSwitchRow(label: UILabel, subtitleLabel: UILabel, switchView: UISwitch, y: CGFloat, x: CGFloat, width: CGFloat) -> CGFloat {
 		let switchSize: CGSize = switchView.intrinsicContentSize
 		label.frame = {
 			var frame: CGRect = .init()
@@ -431,7 +440,16 @@ final class DemoInspectorPanelView: UIView {
 			frame.size = switchSize
 			return frame
 		}()
-		return max(label.frame.maxY, switchView.frame.maxY) + Layout.sectionSpacing
+		let subtitleSize: CGSize = subtitleLabel.sizeThatFits(CGSize(width: width, height: CGFloat.greatestFiniteMagnitude))
+		subtitleLabel.frame = {
+			var frame: CGRect = .init()
+			frame.origin.x = x
+			frame.origin.y = max(label.frame.maxY, switchView.frame.maxY)
+			frame.size.width = width
+			frame.size.height = min(Layout.maximumSubtitleHeight, ceil(subtitleSize.height))
+			return frame
+		}()
+		return subtitleLabel.frame.maxY + Layout.sectionSpacing
 	}
 
 	// MARK: Factories

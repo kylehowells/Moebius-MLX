@@ -38,6 +38,7 @@ final class MoebiusDemoUITests: XCTestCase {
 		XCTAssertTrue(app.staticTexts["Denoising steps: 8"].exists)
 		XCTAssertTrue(app.staticTexts["Guidance scale: 2.0"].exists)
 		XCTAssertTrue(app.staticTexts["Random seed: 7"].exists)
+		XCTAssertTrue(app.staticTexts["Keeps unmasked areas from the source image and only shows generated pixels inside the painted mask."].exists)
 		XCTAssertTrue(app.staticTexts["Brush size: 32 px"].exists)
 		XCTAssertTrue(app.segmentedControls["Mask edit mode"].exists)
 		XCTAssertTrue(app.buttons["Use sample"].exists)
