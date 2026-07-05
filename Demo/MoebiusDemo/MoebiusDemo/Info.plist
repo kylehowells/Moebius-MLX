@@ -4,6 +4,8 @@
 <dict>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MoebiusDemo saves generated result images to your photo library when you choose Save to Photo Library.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

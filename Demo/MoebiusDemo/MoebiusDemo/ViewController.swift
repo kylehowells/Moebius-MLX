@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 // MARK: - ViewController
 
-final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, DemoMaskEditorViewDelegate {
+final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, UIContextMenuInteractionDelegate, DemoMaskEditorViewDelegate {
 
 	private var didAutorun: Bool = false
 
@@ -38,6 +38,8 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self._view.clearMaskButton.addTarget(self, action: #selector(self.clearMaskTapped), for: .touchUpInside)
 		self._view.runButton.addTarget(self, action: #selector(self.runTapped), for: .touchUpInside)
 		self._view.maskEditorView.delegate = self
+		self._view.resultImageView.isUserInteractionEnabled = true
+		self._view.resultImageView.addInteraction(UIContextMenuInteraction(delegate: self))
 
 		self.configureSample(self.currentSample, status: "Ready")
 		self._view.stepper.value = Double(self.stepCount)
@@ -153,6 +155,7 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 	}
 
 	private func openImageFile() {
+		self.documentPickerMode = .importImage
 		let picker: UIDocumentPickerViewController = .init(forOpeningContentTypes: [UTType.image], asCopy: true)
 		picker.delegate = self
 		picker.allowsMultipleSelection = false
@@ -168,6 +171,86 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		let picker: PHPickerViewController = .init(configuration: configuration)
 		picker.delegate = self
 		self.present(picker, animated: true)
+	}
+
+	// MARK: - Result Image Saving
+
+	private enum DocumentPickerMode {
+		case importImage
+		case exportResult
+	}
+
+	private var documentPickerMode: DocumentPickerMode = .importImage
+	private var pendingResultExportURL: URL? = nil
+
+	func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+		guard interaction.view === self._view.resultImageView, self._view.resultImageView.image != nil else {
+			return nil
+		}
+
+		return UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: { [weak self] _ in
+			let saveToFilesAction: UIAction = .init(title: "Save to Files", image: UIImage(systemName: "folder"), handler: { _ in
+				self?.saveResultImageToFiles()
+			})
+			let saveToPhotoLibraryAction: UIAction = .init(title: "Save to Photo Library", image: UIImage(systemName: "photo"), handler: { _ in
+				self?.saveResultImageToPhotoLibrary()
+			})
+			return UIMenu(title: "Save Image", children: [saveToFilesAction, saveToPhotoLibraryAction])
+		})
+	}
+
+	private func saveResultImageToFiles() {
+		guard let image: UIImage = self._view.resultImageView.image else {
+			self.updateStatus("No result image to save")
+			return
+		}
+
+		guard let data: Data = image.pngData() else {
+			self.updateStatus("Could not encode result image")
+			return
+		}
+
+		let timestamp: Int = .init(Date().timeIntervalSince1970)
+		let url: URL = FileManager.default.temporaryDirectory.appendingPathComponent("Moebius-Result-\(timestamp).png")
+		do {
+			try data.write(to: url, options: .atomic)
+			self.pendingResultExportURL = url
+			self.documentPickerMode = .exportResult
+			let picker: UIDocumentPickerViewController = .init(forExporting: [url], asCopy: true)
+			picker.delegate = self
+			self.present(picker, animated: true)
+			self.updateStatus("Choose where to save the result image")
+		}
+		catch {
+			self.updateStatus("Could not prepare result image: \(error.localizedDescription)")
+			self.clearPendingResultExport()
+		}
+	}
+
+	private func saveResultImageToPhotoLibrary() {
+		guard let image: UIImage = self._view.resultImageView.image else {
+			self.updateStatus("No result image to save")
+			return
+		}
+
+		self.updateStatus("Saving result to Photo Library...")
+		UIImageWriteToSavedPhotosAlbum(image, self, #selector(self.resultImage(_:didFinishSavingWithError:contextInfo:)), nil)
+	}
+
+	@objc private func resultImage(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
+		if let error {
+			self.updateStatus("Could not save to Photo Library: \(error.localizedDescription)")
+		}
+		else {
+			self.updateStatus("Saved result to Photo Library")
+		}
+	}
+
+	private func clearPendingResultExport() {
+		if let pendingResultExportURL {
+			try? FileManager.default.removeItem(at: pendingResultExportURL)
+		}
+		self.pendingResultExportURL = nil
 	}
 
 	// MARK: - Sample Actions
@@ -726,6 +809,13 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 	// MARK: - UIDocumentPickerDelegate
 
 	func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+		if self.documentPickerMode == .exportResult {
+			self.updateStatus("Saved result to Files")
+			self.clearPendingResultExport()
+			self.documentPickerMode = .importImage
+			return
+		}
+
 		guard let url: URL = urls.first else { return }
 
 		let didAccess: Bool = url.startAccessingSecurityScopedResource()
@@ -741,6 +831,14 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		}
 		catch {
 			self.updateStatus("Could not load image: \(error.localizedDescription)")
+		}
+	}
+
+	func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+		if self.documentPickerMode == .exportResult {
+			self.updateStatus("Save cancelled")
+			self.clearPendingResultExport()
+			self.documentPickerMode = .importImage
 		}
 	}
 
