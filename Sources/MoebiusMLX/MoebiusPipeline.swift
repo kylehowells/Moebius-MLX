@@ -47,6 +47,11 @@ public final class MoebiusPipeline: @unchecked Sendable {
 	) throws -> MLXArray {
 		let timesteps: [Int] = self.scheduler.timesteps(steps: options.steps, strength: options.strength)
 		var latents: MLXArray = initialLatents.asType(.float32)
+		let dtype: DType = self.model.manifest.precision.dtype
+		let mask64ForUNet: MLXArray = mask64.asType(dtype)
+		let maskedLatentsForUNet: MLXArray = maskedLatents.asType(dtype)
+		eval(mask64ForUNet, maskedLatentsForUNet)
+
 		let conditioning: MoebiusUNetConditioning?
 		let serialConditioning: (first: MoebiusUNetConditioning, second: MoebiusUNetConditioning)?
 		if MoebiusRuntime.usesSerialClassifierFreeGuidance {
@@ -64,7 +69,6 @@ public final class MoebiusPipeline: @unchecked Sendable {
 			eval(conditioning!.arrays)
 		}
 
-		let dtype: DType = self.model.manifest.precision.dtype
 		let timestepEmbeddings: [MLXArray] = timesteps.map { timestep in
 			let timestepArray: MLXArray = MoebiusRuntime.usesSerialClassifierFreeGuidance
 				? .init([timestep])
@@ -78,8 +82,8 @@ public final class MoebiusPipeline: @unchecked Sendable {
 			progress?(MoebiusProgress(stage: "Denoising", step: index + 1, total: timesteps.count))
 			let noise: MLXArray = try self.predictNoiseCFG(
 				latents: latents,
-				mask64: mask64,
-				maskedLatents: maskedLatents,
+				mask64: mask64ForUNet,
+				maskedLatents: maskedLatentsForUNet,
 				timestep: timestep,
 				guidanceScale: options.guidanceScale,
 				timeEmbedding: timestepEmbeddings[index],
@@ -111,10 +115,11 @@ public final class MoebiusPipeline: @unchecked Sendable {
 		timestep: Int,
 		guidanceScale: Float
 	) throws -> MLXArray {
-		try self.predictNoiseCFG(
+		let dtype: DType = self.model.manifest.precision.dtype
+		return try self.predictNoiseCFG(
 			latents: latents,
-			mask64: mask64,
-			maskedLatents: maskedLatents,
+			mask64: mask64.asType(dtype),
+			maskedLatents: maskedLatents.asType(dtype),
 			timestep: timestep,
 			guidanceScale: guidanceScale,
 			conditioning: nil
@@ -133,7 +138,7 @@ public final class MoebiusPipeline: @unchecked Sendable {
 	) throws -> MLXArray {
 		let dtype: DType = self.model.manifest.precision.dtype
 		let input: MLXArray = concatenated(
-			[latents.asType(dtype), mask64.asType(dtype), maskedLatents.asType(dtype)],
+			[latents.asType(dtype), mask64, maskedLatents],
 			axis: -1
 		)
 
