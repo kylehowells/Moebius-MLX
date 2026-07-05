@@ -291,8 +291,8 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 			}
 			let actions: [UIAction] = options.enumerated().map({ precisionIndex, option in
 				let variant: String = option.resolvedVariant(modelName: modelName)
-				let state: UIMenuElement.State = (modelIndex == self.selectedModelIndex && precisionIndex == self.selectedPrecisionIndex) ? .on : .off
-				return UIAction(title: variant, state: state, handler: { [weak self] _ in
+				let availability: DemoModelAvailability = DemoModelLocator.availability(variant: variant)
+				let action: UIAction = .init(title: variant, state: self.modelMenuState(for: availability), handler: { [weak self] _ in
 					guard let self else { return }
 
 					self.selectedModelIndex = modelIndex
@@ -301,6 +301,8 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 					self.hideDownloadProgress()
 					self.updateSelectedModelAvailabilityStatus(prefix: "Selected")
 				})
+				action.subtitle = self.modelMenuSubtitle(for: availability)
+				return action
 			})
 			modelMenus.append(UIMenu(title: modelName, options: .displayInline, children: actions))
 		}
@@ -309,6 +311,28 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self._view.modelButton.menu = UIMenu(title: "Model", children: modelMenus)
 		self._view.modelButton.showsMenuAsPrimaryAction = true
 		self._view.modelButton.setTitle(variant, for: .normal)
+	}
+
+	private func modelMenuState(for availability: DemoModelAvailability) -> UIMenuElement.State {
+		switch availability {
+			case .available:
+				return .on
+
+			case .missing:
+				return .off
+		}
+	}
+
+	private func modelMenuSubtitle(for availability: DemoModelAvailability) -> String {
+		switch availability {
+			case let .available(_, sizeBytes):
+				let sizeText: String = sizeBytes.map { DemoModelLocator.formatBytes($0) } ?? "unknown size"
+				return "Downloaded - \(sizeText)"
+
+			case let .missing(estimatedBytes):
+				let sizeText: String = estimatedBytes.map { DemoModelLocator.formatBytes($0) } ?? "unknown size"
+				return "Download - \(sizeText)"
+		}
 	}
 
 	private func hideDownloadProgress() {
