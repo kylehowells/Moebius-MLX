@@ -37,7 +37,6 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self._view.resetSampleButton.addTarget(self, action: #selector(self.resetSampleTapped), for: .touchUpInside)
 		self._view.clearMaskButton.addTarget(self, action: #selector(self.clearMaskTapped), for: .touchUpInside)
 		self._view.runButton.addTarget(self, action: #selector(self.runTapped), for: .touchUpInside)
-		self._view.compareButton.addTarget(self, action: #selector(self.compareTapped), for: .touchUpInside)
 		self._view.maskEditorView.delegate = self
 
 		self.configureSample(self.currentSample, status: "Ready")
@@ -138,10 +137,6 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 
 	@objc private func runTapped() {
 		self.prepareAndRunSample()
-	}
-
-	@objc private func compareTapped() {
-		self.prepareAndCompareVariants()
 	}
 
 	// MARK: - Image Loading
@@ -351,16 +346,6 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 			return option.resolvedVariant(modelName: modelName)
 		}
 		self.runVariants(variants, resultMode: .comparison)
-	}
-
-	private func prepareAndCompareVariants() {
-		guard self.isRunning == false else { return }
-
-		let modelName: String = self.modelNames[self.selectedModelIndex]
-		let variants: [String] = self.precisionOptions().map { option in
-			return option.resolvedVariant(modelName: modelName)
-		}
-		self.prepareModelsThenRun(variants: variants, resultMode: .comparison)
 	}
 
 	private func prepareModelsThenRun(variants: [String], resultMode: DemoRunMode) {
@@ -678,7 +663,6 @@ final class ViewController: UIViewController, UIDocumentPickerDelegate, PHPicker
 		self._view.loadImageButton.isEnabled = isEnabled
 		self._view.resetSampleButton.isEnabled = isEnabled
 		self._view.runButton.isEnabled = isEnabled
-		self._view.compareButton.isEnabled = isEnabled
 		self._view.modelButton.isEnabled = isEnabled
 		self._view.settingsButton.isEnabled = isEnabled
 		self._view.stepper.isEnabled = isEnabled
@@ -861,7 +845,6 @@ final class DemoView: UIView {
 	var modelButton: UIButton { return self.inspectorPanel.modelButton }
 	var resetSampleButton: UIButton { return self.inspectorPanel.resetSampleButton }
 	var clearMaskButton: UIButton { return self.inspectorPanel.clearMaskButton }
-	var compareButton: UIButton { return self.inspectorPanel.compareButton }
 	var stepsLabel: UILabel { return self.inspectorPanel.stepsLabel }
 	var guidanceLabel: UILabel { return self.inspectorPanel.guidanceLabel }
 	var seedLabel: UILabel { return self.inspectorPanel.seedLabel }

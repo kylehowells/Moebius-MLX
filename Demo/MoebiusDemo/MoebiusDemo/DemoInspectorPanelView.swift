@@ -32,7 +32,7 @@ final class DemoInspectorPanelView: UIView {
 	let maskToolsHeaderLabel: UILabel = DemoInspectorPanelView.makeSectionLabel(text: "Mask")
 	let maskToolsSubtitleLabel: UILabel = DemoInspectorPanelView.makeSubtitleLabel(text: "Paint the area to replace over the source image.")
 	let actionsHeaderLabel: UILabel = DemoInspectorPanelView.makeSectionLabel(text: "Utilities")
-	let actionsSubtitleLabel: UILabel = DemoInspectorPanelView.makeSubtitleLabel(text: "Sample reset, mask cleanup, and quant comparison.")
+	let actionsSubtitleLabel: UILabel = DemoInspectorPanelView.makeSubtitleLabel(text: "Sample reset and mask cleanup.")
 
 	let modelButton: UIButton = {
 		var configuration: UIButton.Configuration = .tinted()
@@ -115,7 +115,6 @@ final class DemoInspectorPanelView: UIView {
 
 	let resetSampleButton: UIButton = DemoInspectorPanelView.makeButton(title: "Use sample", imageName: "arrow.counterclockwise", filled: false, identifier: "reset-sample")
 	let clearMaskButton: UIButton = DemoInspectorPanelView.makeButton(title: "Clear mask", imageName: "eraser", filled: false, identifier: "clear-mask")
-	let compareButton: UIButton = DemoInspectorPanelView.makeButton(title: "Compare quants", imageName: "square.grid.2x2", filled: false, identifier: "compare-quants")
 
 	// MARK: Initialization
 	
@@ -152,7 +151,6 @@ final class DemoInspectorPanelView: UIView {
 			self.actionsSubtitleLabel,
 			self.resetSampleButton,
 			self.clearMaskButton,
-			self.compareButton,
 		] {
 			self.contentView.addSubview(subview)
 		}
@@ -343,17 +341,7 @@ final class DemoInspectorPanelView: UIView {
 			frame.size.height = buttonHeight
 			return frame
 		}()
-		currentY = self.clearMaskButton.frame.maxY + Layout.smallSpacing
-		
-		self.compareButton.frame = {
-			var frame: CGRect = .init()
-			frame.origin.x = contentX
-			frame.origin.y = currentY
-			frame.size.width = contentWidth
-			frame.size.height = buttonHeight
-			return frame
-		}()
-		currentY = self.compareButton.frame.maxY + scrollContentBottom
+		currentY = self.clearMaskButton.frame.maxY + scrollContentBottom
 
 		self.contentView.frame = {
 			var frame: CGRect = .init()

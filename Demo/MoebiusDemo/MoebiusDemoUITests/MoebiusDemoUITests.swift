@@ -42,6 +42,6 @@ final class MoebiusDemoUITests: XCTestCase {
 		XCTAssertTrue(app.segmentedControls["Mask edit mode"].exists)
 		XCTAssertTrue(app.buttons["Use sample"].exists)
 		XCTAssertTrue(app.buttons["Clear mask"].exists)
-		XCTAssertTrue(app.buttons["Compare quants"].exists)
+		XCTAssertFalse(app.buttons["Compare quants"].exists)
 	}
 }
