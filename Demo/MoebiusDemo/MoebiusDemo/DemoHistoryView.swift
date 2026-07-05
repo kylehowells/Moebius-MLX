@@ -44,6 +44,14 @@ final class DemoHistoryView: UIView {
 		static let contentInset: CGFloat = 10
 	}
 
+	override func sizeThatFits(_ size: CGSize) -> CGSize {
+		let contentWidth: CGFloat = max(0, size.width - (Layout.contentInset * 2))
+		let rowHeight: CGFloat = self.rows.reduce(CGFloat(0)) { partialResult, row in
+			return max(partialResult, row.sizeThatFits(CGSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)).height)
+		}
+		return CGSize(width: size.width, height: (Layout.contentInset * 2) + (rowHeight * CGFloat(Self.rowCount)))
+	}
+
 	override func layoutSubviews() {
 		super.layoutSubviews()
 		self.layer.cornerRadius = Layout.cornerRadius
@@ -129,31 +137,49 @@ private final class DemoHistoryRowView: UIView {
 
 	private enum Layout {
 		static let spacing: CGFloat = 8
-		static let maximumDetailWidth: CGFloat = 390
 		static let detailWidthRatio: CGFloat = 0.65
-		static let zero: CGFloat = 0
+	}
+
+	override func sizeThatFits(_ size: CGSize) -> CGSize {
+		let detailWidth: CGFloat = self.detailWidth(for: size.width)
+		let variantWidth: CGFloat = max(0, size.width - detailWidth - Layout.spacing)
+		let variantSize: CGSize = self.measuredLabelSize(self.variantLabel, width: variantWidth)
+		let detailSize: CGSize = self.measuredLabelSize(self.detailLabel, width: detailWidth)
+		return CGSize(width: size.width, height: max(variantSize.height, detailSize.height))
 	}
 
 	override func layoutSubviews() {
 		super.layoutSubviews()
 		let spacing: CGFloat = Layout.spacing
-		let detailWidth: CGFloat = min(Layout.maximumDetailWidth, self.bounds.width * Layout.detailWidthRatio)
+		let detailWidth: CGFloat = self.detailWidth(for: self.bounds.width)
 		self.detailLabel.frame = {
 			var frame: CGRect = .init()
 			frame.origin.x = self.bounds.width - detailWidth
-			frame.origin.y = Layout.zero
+			frame.origin.y = 0
 			frame.size.width = detailWidth
 			frame.size.height = self.bounds.height
 			return frame
 		}()
 		self.variantLabel.frame = {
 			var frame: CGRect = .init()
-			frame.origin.x = Layout.zero
-			frame.origin.y = Layout.zero
-			frame.size.width = max(Layout.zero, self.detailLabel.frame.minX - spacing)
+			frame.origin.x = 0
+			frame.origin.y = 0
+			frame.size.width = max(0, self.detailLabel.frame.minX - spacing)
 			frame.size.height = self.bounds.height
 			return frame
 		}()
+	}
+
+	private func detailWidth(for width: CGFloat) -> CGFloat {
+		let preferredSize: CGSize = self.measuredLabelSize(self.detailLabel, width: CGFloat.greatestFiniteMagnitude)
+		let maximumWidth: CGFloat = max(0, width * Layout.detailWidthRatio)
+		return min(maximumWidth, preferredSize.width)
+	}
+
+	private func measuredLabelSize(_ label: UILabel, width: CGFloat) -> CGSize {
+		let availableSize: CGSize = .init(width: max(0, width), height: CGFloat.greatestFiniteMagnitude)
+		let measuredSize: CGSize = label.sizeThatFits(availableSize)
+		return CGSize(width: min(max(0, width), ceil(measuredSize.width)), height: ceil(measuredSize.height))
 	}
 }
 

@@ -955,22 +955,7 @@ final class DemoView: UIView {
 		static let compactInspectorMaximumWidth: CGFloat = 340
 		static let compactInspectorMinimumWidth: CGFloat = 280
 		static let compactInspectorWidthRatio: CGFloat = 0.86
-		static let topButtonHeight: CGFloat = 38
-		static let optionsButtonWidth: CGFloat = 104
-		static let minimumPrimaryButtonWidth: CGFloat = 124
-		static let maximumPrimaryButtonWidth: CGFloat = 170
-		static let primaryButtonWidthRatio: CGFloat = 0.22
-		static let titleLabelMaximumWidth: CGFloat = 220
-		static let titleLabelMinimumWidth: CGFloat = 80
-		static let titleLabelHeight: CGFloat = 34
-		static let statusLabelHeight: CGFloat = 34
-		static let sectionTitleHeight: CGFloat = 24
-		static let tallHistoryHeight: CGFloat = 118
-		static let compactHistoryHeight: CGFloat = 88
-		static let minimumHistoryHeight: CGFloat = 72
-		static let tallHistoryMinimumHeight: CGFloat = 760
 		static let minimumImageAreaHeight: CGFloat = 240
-		static let imageAreaReservedHeight: CGFloat = 34
 		static let hiddenInspectorOffset: CGFloat = 0
 	}
 
@@ -997,54 +982,64 @@ final class DemoView: UIView {
 		}()
 		var currentY: CGFloat = safeArea.top + contentInset
 
-		let settingsWidth: CGFloat = showsOptionsButton ? Layout.optionsButtonWidth : 0
+		let settingsSize: CGSize = showsOptionsButton ? self.measuredControlSize(self.settingsButton, width: contentWidth) : .zero
+		let settingsWidth: CGFloat = settingsSize.width
 		if contentWidth < Layout.compactToolbarMaximumContentWidth {
+			let titleWidth: CGFloat = max(0, contentWidth - settingsWidth - Layout.smallSpacing)
+			let titleSize: CGSize = self.measuredLabelSize(self.titleLabel, width: titleWidth)
+			let toolbarHeight: CGFloat = max(titleSize.height, settingsSize.height)
 			self.titleLabel.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = contentX
-				frame.origin.y = currentY
-				frame.size.width = max(Layout.titleLabelMinimumWidth, contentWidth - settingsWidth - Layout.smallSpacing)
-				frame.size.height = Layout.titleLabelHeight
+				frame.origin.y = currentY + ((toolbarHeight - titleSize.height) / 2)
+				frame.size.width = titleWidth
+				frame.size.height = titleSize.height
 				return frame
 			}()
 			self.settingsButton.isHidden = false
 			self.settingsButton.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = contentX + contentWidth - settingsWidth
-				frame.origin.y = currentY
+				frame.origin.y = currentY + ((toolbarHeight - settingsSize.height) / 2)
 				frame.size.width = settingsWidth
-				frame.size.height = Layout.topButtonHeight
+				frame.size.height = settingsSize.height
 				return frame
 			}()
 			currentY = max(self.titleLabel.frame.maxY, self.settingsButton.frame.maxY) + Layout.smallSpacing
 
 			let splitButtonWidth: CGFloat = floor((contentWidth - Layout.smallSpacing) / 2)
+			let loadButtonHeight: CGFloat = self.measuredControlHeight(self.loadImageButton, width: splitButtonWidth)
+			let runButtonHeight: CGFloat = self.measuredControlHeight(self.runButton, width: contentWidth - splitButtonWidth - Layout.smallSpacing)
+			let buttonRowHeight: CGFloat = max(loadButtonHeight, runButtonHeight)
 			self.loadImageButton.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = contentX
-				frame.origin.y = currentY
+				frame.origin.y = currentY + ((buttonRowHeight - loadButtonHeight) / 2)
 				frame.size.width = splitButtonWidth
-				frame.size.height = Layout.topButtonHeight
+				frame.size.height = loadButtonHeight
 				return frame
 			}()
 			self.runButton.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = self.loadImageButton.frame.maxX + Layout.smallSpacing
-				frame.origin.y = currentY
+				frame.origin.y = currentY + ((buttonRowHeight - runButtonHeight) / 2)
 				frame.size.width = contentWidth - splitButtonWidth - Layout.smallSpacing
-				frame.size.height = Layout.topButtonHeight
+				frame.size.height = runButtonHeight
 				return frame
 			}()
 			currentY = self.runButton.frame.maxY + Layout.smallSpacing
 		}
 		else {
-			let primaryButtonWidth: CGFloat = min(Layout.maximumPrimaryButtonWidth, max(Layout.minimumPrimaryButtonWidth, contentWidth * Layout.primaryButtonWidthRatio))
+			let runButtonSize: CGSize = self.measuredControlSize(self.runButton, width: contentWidth)
+			let loadButtonSize: CGSize = self.measuredControlSize(self.loadImageButton, width: contentWidth)
+			let primaryButtonWidth: CGFloat = max(runButtonSize.width, loadButtonSize.width)
+			let toolbarHeight: CGFloat = max(runButtonSize.height, loadButtonSize.height, settingsSize.height)
 			self.runButton.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = contentX + contentWidth - primaryButtonWidth
-				frame.origin.y = currentY
+				frame.origin.y = currentY + ((toolbarHeight - runButtonSize.height) / 2)
 				frame.size.width = primaryButtonWidth
-				frame.size.height = Layout.topButtonHeight
+				frame.size.height = runButtonSize.height
 				return frame
 			}()
 			if showsOptionsButton {
@@ -1052,9 +1047,9 @@ final class DemoView: UIView {
 				self.settingsButton.frame = {
 					var frame: CGRect = .init()
 					frame.origin.x = self.runButton.frame.minX - settingsWidth - Layout.smallSpacing
-					frame.origin.y = currentY
+					frame.origin.y = currentY + ((toolbarHeight - settingsSize.height) / 2)
 					frame.size.width = settingsWidth
-					frame.size.height = Layout.topButtonHeight
+					frame.size.height = settingsSize.height
 					return frame
 				}()
 			}
@@ -1065,53 +1060,60 @@ final class DemoView: UIView {
 					frame.origin.x = self.runButton.frame.minX
 					frame.origin.y = currentY
 					frame.size.width = 0
-					frame.size.height = Layout.topButtonHeight
+					frame.size.height = 0
 					return frame
 				}()
 			}
 			let availableLoadX: CGFloat = self.settingsButton.frame.minX - primaryButtonWidth - Layout.smallSpacing
+			let titleWidth: CGFloat = max(0, availableLoadX - contentX - Layout.smallSpacing)
+			let titleSize: CGSize = self.measuredLabelSize(self.titleLabel, width: titleWidth)
 			self.titleLabel.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = contentX
-				frame.origin.y = currentY
-				frame.size.width = min(Layout.titleLabelMaximumWidth, max(Layout.titleLabelMinimumWidth, availableLoadX - contentX - Layout.smallSpacing))
-				frame.size.height = Layout.titleLabelHeight
+				frame.origin.y = currentY + ((toolbarHeight - titleSize.height) / 2)
+				frame.size.width = titleWidth
+				frame.size.height = titleSize.height
 				return frame
 			}()
 			self.loadImageButton.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = max(self.titleLabel.frame.maxX + Layout.smallSpacing, availableLoadX)
-				frame.origin.y = currentY
+				frame.origin.y = currentY + ((toolbarHeight - loadButtonSize.height) / 2)
 				frame.size.width = primaryButtonWidth
-				frame.size.height = Layout.topButtonHeight
+				frame.size.height = loadButtonSize.height
 				return frame
 			}()
 			currentY = max(self.titleLabel.frame.maxY, self.runButton.frame.maxY) + Layout.smallSpacing
 		}
+		let statusSize: CGSize = self.measuredLabelSize(self.statusLabel, width: contentWidth)
 		self.statusLabel.frame = {
 			var frame: CGRect = .init()
 			frame.origin.x = contentX
 			frame.origin.y = currentY
 			frame.size.width = contentWidth
-			frame.size.height = Layout.statusLabelHeight
+			frame.size.height = statusSize.height
 			return frame
 		}()
 		currentY = self.statusLabel.frame.maxY + spacing
 
-		let historyHeight: CGFloat = self.bounds.height >= Layout.tallHistoryMinimumHeight ? Layout.tallHistoryHeight : Layout.compactHistoryHeight
+		let historyTitleSize: CGSize = self.measuredLabelSize(self.historyTitleLabel, width: contentWidth)
+		let preferredHistoryHeight: CGFloat = self.historyView.sizeThatFits(CGSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)).height
 		let availableImageHeight: CGFloat = max(
 			Layout.minimumImageAreaHeight,
-			self.bounds.height - safeArea.bottom - currentY - historyHeight - contentInset - Layout.imageAreaReservedHeight
+			self.bounds.height - safeArea.bottom - currentY - historyTitleSize.height - Layout.smallSpacing - preferredHistoryHeight - contentInset
 		)
 		if contentWidth >= Layout.sideBySideMinimumContentWidth {
 			let itemWidth: CGFloat = floor((contentWidth - spacing) / 2)
-			let imageHeight: CGFloat = min(itemWidth, availableImageHeight - Layout.sectionTitleHeight)
+			let sourceTitleSize: CGSize = self.measuredLabelSize(self.sourceTitleLabel, width: itemWidth)
+			let resultTitleSize: CGSize = self.measuredLabelSize(self.resultTitleLabel, width: itemWidth)
+			let titleHeight: CGFloat = max(sourceTitleSize.height, resultTitleSize.height)
+			let imageHeight: CGFloat = min(itemWidth, availableImageHeight - titleHeight)
 			self.sourceTitleLabel.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = contentX
 				frame.origin.y = currentY
 				frame.size.width = itemWidth
-				frame.size.height = Layout.sectionTitleHeight
+				frame.size.height = sourceTitleSize.height
 				return frame
 			}()
 			self.resultTitleLabel.frame = {
@@ -1119,13 +1121,13 @@ final class DemoView: UIView {
 				frame.origin.x = contentX + itemWidth + spacing
 				frame.origin.y = currentY
 				frame.size.width = itemWidth
-				frame.size.height = Layout.sectionTitleHeight
+				frame.size.height = resultTitleSize.height
 				return frame
 			}()
 			self.maskEditorView.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = self.sourceTitleLabel.frame.minX
-				frame.origin.y = self.sourceTitleLabel.frame.maxY
+				frame.origin.y = currentY + titleHeight
 				frame.size.width = itemWidth
 				frame.size.height = imageHeight
 				return frame
@@ -1133,7 +1135,7 @@ final class DemoView: UIView {
 			self.resultImageView.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = self.resultTitleLabel.frame.minX
-				frame.origin.y = self.resultTitleLabel.frame.maxY
+				frame.origin.y = currentY + titleHeight
 				frame.size.width = itemWidth
 				frame.size.height = imageHeight
 				return frame
@@ -1141,13 +1143,15 @@ final class DemoView: UIView {
 			currentY = self.maskEditorView.frame.maxY + spacing
 		}
 		else {
-			let imageHeight: CGFloat = min(contentWidth, floor((availableImageHeight - (Layout.sectionTitleHeight * 2) - spacing) / 2))
+			let sourceTitleSize: CGSize = self.measuredLabelSize(self.sourceTitleLabel, width: contentWidth)
+			let resultTitleSize: CGSize = self.measuredLabelSize(self.resultTitleLabel, width: contentWidth)
+			let imageHeight: CGFloat = min(contentWidth, floor((availableImageHeight - sourceTitleSize.height - resultTitleSize.height - spacing) / 2))
 			self.sourceTitleLabel.frame = {
 				var frame: CGRect = .init()
 				frame.origin.x = contentX
 				frame.origin.y = currentY
 				frame.size.width = contentWidth
-				frame.size.height = Layout.sectionTitleHeight
+				frame.size.height = sourceTitleSize.height
 				return frame
 			}()
 			self.maskEditorView.frame = {
@@ -1163,7 +1167,7 @@ final class DemoView: UIView {
 				frame.origin.x = contentX
 				frame.origin.y = self.maskEditorView.frame.maxY + spacing
 				frame.size.width = contentWidth
-				frame.size.height = Layout.sectionTitleHeight
+				frame.size.height = resultTitleSize.height
 				return frame
 			}()
 			self.resultImageView.frame = {
@@ -1184,7 +1188,7 @@ final class DemoView: UIView {
 			frame.origin.x = contentX
 			frame.origin.y = currentY
 			frame.size.width = contentWidth
-			frame.size.height = Layout.sectionTitleHeight
+			frame.size.height = historyTitleSize.height
 			return frame
 		}()
 		self.historyView.frame = {
@@ -1192,10 +1196,7 @@ final class DemoView: UIView {
 			frame.origin.x = contentX
 			frame.origin.y = self.historyTitleLabel.frame.maxY + Layout.smallSpacing / 2
 			frame.size.width = contentWidth
-			frame.size.height = max(
-				Layout.minimumHistoryHeight,
-				min(historyHeight, self.bounds.height - self.historyTitleLabel.frame.maxY - safeArea.bottom - contentInset)
-			)
+			frame.size.height = min(preferredHistoryHeight, max(0, self.bounds.height - self.historyTitleLabel.frame.maxY - safeArea.bottom - contentInset))
 			return frame
 		}()
 
@@ -1237,6 +1238,26 @@ final class DemoView: UIView {
 		self.inspectorPanel.contentSafeAreaInsets = safeArea
 		self.bringSubviewToFront(self.inspectorDimmingControl)
 		self.bringSubviewToFront(self.inspectorPanel)
+	}
+
+	private func measuredLabelSize(_ label: UILabel, width: CGFloat) -> CGSize {
+		let availableSize: CGSize = .init(width: max(0, width), height: CGFloat.greatestFiniteMagnitude)
+		let measuredSize: CGSize = label.sizeThatFits(availableSize)
+		return CGSize(width: min(max(0, width), ceil(measuredSize.width)), height: ceil(measuredSize.height))
+	}
+
+	private func measuredControlSize(_ control: UIView, width: CGFloat) -> CGSize {
+		let fittingSize: CGSize = .init(width: max(0, width), height: CGFloat.greatestFiniteMagnitude)
+		let measuredSize: CGSize = control.sizeThatFits(fittingSize)
+		let intrinsicSize: CGSize = control.intrinsicContentSize
+		let measuredWidth: CGFloat = measuredSize.width > 0 ? measuredSize.width : intrinsicSize.width
+		let measuredHeight: CGFloat = measuredSize.height > 0 ? measuredSize.height : intrinsicSize.height
+		return CGSize(width: ceil(max(0, measuredWidth)), height: ceil(max(0, measuredHeight)))
+	}
+
+	private func measuredControlHeight(_ control: UIView, width: CGFloat) -> CGFloat {
+		let measuredSize: CGSize = self.measuredControlSize(control, width: width)
+		return measuredSize.height
 	}
 }
 
